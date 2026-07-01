@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useRef, useEffect } f
 import type { ReactNode } from "react";
 import {
   requestBluetoothDevice,
+  requestBluetoothDeviceForAdapter,
   generateDeviceId,
   DEFAULT_DEVICE_STATE,
   isWebBluetoothSupported,
@@ -15,6 +16,7 @@ import {
   loadSessions, saveSessions, startSession, updateSession, endSession
 } from "@/lib/stats";
 import type { Session } from "@/lib/stats";
+import { useToast } from "@/hooks/use-toast";
 
 export interface ConnectedDevice {
   id: string;
@@ -35,7 +37,7 @@ interface DeviceContextValue {
   connectError: string | null;
   bluetoothSupported: boolean;
   bluetoothUnsupportedReason: string | null;
-  connectDevice: () => Promise<void>;
+  connectDevice: (adapter?: VaporizerAdapter) => Promise<void>;
   disconnectDevice: (deviceId: string) => Promise<void>;
   sendCommand: (deviceId: string, cmd: VaporizerCommand) => Promise<void>;
   heatUp: (deviceId: string) => Promise<void>;
@@ -57,35 +59,59 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   const [allSessions, setAllSessions] = useState<Session[]>(() => loadSessions());
   const adaptersRef = useRef(getAllAdapters());
   const unsubscribersRef = useRef<Record<string, () => void>>({});
+  const { toast } = useToast();
 
   const bluetoothSupported = isWebBluetoothSupported();
   const bluetoothUnsupportedReason = getUnsupportedReason();
 
   useEffect(() => {
-    return () => {
-      Object.values(unsubscribersRef.current).forEach(fn => fn());
-    };
+    return () => { Object.values(unsubscribersRef.current).forEach(fn => fn()); };
   }, []);
 
-  const connectDevice = useCallback(async () => {
+  const connectDevice = useCallback(async (preselectedAdapter?: VaporizerAdapter) => {
     setIsConnecting(true);
     setConnectError(null);
     try {
-      const result = await requestBluetoothDevice(adaptersRef.current);
-      if (!result) { setIsConnecting(false); return; }
+      let device: BluetoothDevice | null = null;
+      let adapter: VaporizerAdapter;
 
-      const { device, adapter } = result;
+      if (preselectedAdapter) {
+        device = await requestBluetoothDeviceForAdapter(preselectedAdapter);
+        if (!device) { setIsConnecting(false); return; }
+        adapter = preselectedAdapter;
+      } else {
+        const result = await requestBluetoothDevice(adaptersRef.current);
+        if (!result) { setIsConnecting(false); return; }
+        device = result.device;
+        adapter = result.adapter;
+      }
+
       const deviceId = generateDeviceId(device);
-
       setDevices(prev => prev.filter(d => d.id !== deviceId));
       if (unsubscribersRef.current[deviceId]) {
         unsubscribersRef.current[deviceId]();
         delete unsubscribersRef.current[deviceId];
       }
 
-      const initialState = await adapter.connect(device);
-      const deviceType = adapter.deviceType;
+      let initialState: DeviceState;
+      try {
+        initialState = await adapter.connect(device);
+      } catch (connectErr: unknown) {
+        const msg = connectErr instanceof Error ? connectErr.message : "Verbindung fehlgeschlagen";
+        const friendly = msg.includes("GATT") || msg.includes("service")
+          ? `Gerät verbunden, aber Service nicht gefunden. Falscher Gerätetyp gewählt? (${msg})`
+          : msg;
+        setConnectError(friendly);
+        toast({
+          title: "Verbindungsfehler",
+          description: friendly,
+          variant: "destructive",
+        });
+        setIsConnecting(false);
+        return;
+      }
 
+      const deviceType = adapter.deviceType;
       const connectedDevice: ConnectedDevice = {
         id: deviceId,
         name: device.name ?? adapter.displayName,
@@ -110,19 +136,25 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
         setDevices(prev => prev.map(d =>
           d.id === deviceId ? { ...d, state: { ...d.state, connected: false } } : d
         ));
+        toast({ title: `${connectedDevice.displayName} getrennt`, description: "Bluetooth-Verbindung unterbrochen." });
       });
 
       setDevices(prev => {
         const filtered = prev.filter(d => d.id !== deviceId);
         return [...filtered, connectedDevice];
       });
+
+      toast({ title: `${connectedDevice.displayName} verbunden`, description: "Gerät erfolgreich verbunden." });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Connection failed";
-      setConnectError(msg);
+      const msg = e instanceof Error ? e.message : "Verbindung fehlgeschlagen";
+      if (!(e instanceof DOMException && e.name === "NotFoundError")) {
+        setConnectError(msg);
+        toast({ title: "Fehler", description: msg, variant: "destructive" });
+      }
     } finally {
       setIsConnecting(false);
     }
-  }, []);
+  }, [toast]);
 
   const disconnectDevice = useCallback(async (deviceId: string) => {
     const device = devices.find(d => d.id === deviceId);
@@ -154,15 +186,8 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   const startHeatingSession = useCallback((deviceId: string) => {
     const device = devices.find(d => d.id === deviceId);
     if (!device || device.activeSession) return;
-    const session = startSession(
-      deviceId,
-      device.deviceType,
-      device.displayName,
-      device.state.targetTemperature ?? 185
-    );
-    setDevices(prev => prev.map(d =>
-      d.id === deviceId ? { ...d, activeSession: session } : d
-    ));
+    const session = startSession(deviceId, device.deviceType, device.displayName, device.state.targetTemperature ?? 185);
+    setDevices(prev => prev.map(d => d.id === deviceId ? { ...d, activeSession: session } : d));
   }, [devices]);
 
   const stopHeatingSession = useCallback((deviceId: string) => {
@@ -172,9 +197,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     const updated = [...allSessions, finished];
     setAllSessions(updated);
     saveSessions(updated);
-    setDevices(prev => prev.map(d =>
-      d.id === deviceId ? { ...d, activeSession: null } : d
-    ));
+    setDevices(prev => prev.map(d => d.id === deviceId ? { ...d, activeSession: null } : d));
   }, [devices, allSessions]);
 
   const heatUp = useCallback(async (deviceId: string) => {
@@ -183,16 +206,9 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     if (!device.state.isHeating) {
       await device.adapter.sendCommand({ type: "toggle_heat" });
       const newState = await device.adapter.getState();
-      const session = startSession(
-        deviceId,
-        device.deviceType,
-        device.displayName,
-        device.state.targetTemperature ?? 185
-      );
+      const session = startSession(deviceId, device.deviceType, device.displayName, device.state.targetTemperature ?? 185);
       setDevices(prev => prev.map(d =>
-        d.id === deviceId
-          ? { ...d, state: { ...d.state, ...newState }, activeSession: session }
-          : d
+        d.id === deviceId ? { ...d, state: { ...d.state, ...newState }, activeSession: session } : d
       ));
     }
   }, [devices]);
@@ -220,9 +236,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
 
   const extendSession = useCallback((deviceId: string, extraSeconds: number) => {
     setDevices(prev => prev.map(d =>
-      d.id === deviceId
-        ? { ...d, sessionMaxDuration: d.sessionMaxDuration + extraSeconds }
-        : d
+      d.id === deviceId ? { ...d, sessionMaxDuration: d.sessionMaxDuration + extraSeconds } : d
     ));
   }, []);
 

@@ -90,6 +90,29 @@ export function getUnsupportedReason(): string | null {
   return null;
 }
 
+export async function requestBluetoothDeviceForAdapter(
+  adapter: VaporizerAdapter
+): Promise<BluetoothDevice | null> {
+  if (!isWebBluetoothSupported()) return null;
+
+  const nameFilters: BluetoothLEScanFilter[] = [];
+  if (adapter.nameFilter) {
+    const names = Array.isArray(adapter.nameFilter) ? adapter.nameFilter : [adapter.nameFilter];
+    for (const n of names) nameFilters.push({ namePrefix: n });
+  }
+  const filters: BluetoothRequestDeviceFilter[] = nameFilters.length > 0 ? nameFilters : [{}];
+
+  try {
+    return await navigator.bluetooth.requestDevice({
+      filters,
+      optionalServices: adapter.serviceUUIDs,
+    });
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === "NotFoundError") return null;
+    throw e;
+  }
+}
+
 export async function requestBluetoothDevice(
   adapters: VaporizerAdapter[]
 ): Promise<{ device: BluetoothDevice; adapter: VaporizerAdapter } | null> {

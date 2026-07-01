@@ -1,6 +1,6 @@
 import { useDevices } from "@/contexts/DeviceContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   Bluetooth, Plus, Wind, PowerOff, Thermometer, Battery,
   Clock, Wifi, WifiOff, Flame, PenLine, Check, X, AlarmClock, TimerReset,
@@ -11,11 +11,12 @@ import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { formatTemp, loadPresets, savePresets } from "@/lib/stats";
 import type { TempPreset } from "@/lib/stats";
-import { DEVICE_TEMP_RANGES } from "@/lib/devices";
+import { DEVICE_TEMP_RANGES, getAllAdapters } from "@/lib/devices";
 import type { VaporizerType } from "@/lib/bluetooth";
 import type { ConnectedDevice } from "@/contexts/DeviceContext";
 import { motion, AnimatePresence } from "framer-motion";
 import VolcanoRoutines from "@/components/VolcanoRoutines";
+import DevicePickerModal from "@/components/DevicePickerModal";
 
 function TempGauge({ current, target, unit, isHeating }: {
   current: number | null;
@@ -438,11 +439,23 @@ function DeviceCard({ device }: { device: ConnectedDevice }) {
 export default function Dashboard() {
   const { devices, isConnecting, connectDevice, bluetoothSupported, bluetoothUnsupportedReason } = useDevices();
   const { settings } = useSettings();
+  const [showPicker, setShowPicker] = useState(false);
+  const adapters = getAllAdapters();
+
+  const handleSelectDevice = (deviceType: import("@/lib/bluetooth").VaporizerType) => {
+    const adapter = adapters.find(a => a.deviceType === deviceType);
+    if (adapter) connectDevice(adapter);
+  };
 
   const showWidget = (id: string) => settings.dashboardWidgets.includes(id);
 
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto min-h-[calc(100vh-4rem)] md:min-h-screen">
+      <DevicePickerModal
+        open={showPicker}
+        onClose={() => setShowPicker(false)}
+        onSelect={handleSelectDevice}
+      />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 data-testid="page-title-dashboard" className="text-3xl font-bold tracking-tight mb-1">Dashboard</h1>
@@ -452,7 +465,7 @@ export default function Dashboard() {
         </div>
         <Button
           data-testid="connect-device-btn"
-          onClick={connectDevice}
+          onClick={() => setShowPicker(true)}
           disabled={isConnecting || !bluetoothSupported}
           className="gap-2 bg-primary/10 text-primary border border-primary/30 hover:bg-primary hover:text-primary-foreground shadow-[0_0_10px_rgba(249,115,22,0.1)] transition-all"
         >
@@ -508,7 +521,7 @@ export default function Dashboard() {
           </p>
           <Button
             data-testid="connect-first-device-btn"
-            onClick={connectDevice}
+            onClick={() => setShowPicker(true)}
             disabled={isConnecting || !bluetoothSupported}
             size="lg"
             className="gap-2 bg-primary text-primary-foreground shadow-[0_0_15px_rgba(249,115,22,0.4)] hover:shadow-[0_0_25px_rgba(249,115,22,0.6)] font-bold tracking-wider uppercase text-xs"

@@ -1,0 +1,2 @@
+- [Venty BLE protocol](venty-ble.md) — Venty name is "VY+serial", uses completely different service UUID from Volcano; confirmed from firsttris/reactive-volcano-app
+- [VapoRemote arch](vaporemote-arch.md) — device picker modal approach: user pre-selects device type → requestBluetoothDeviceForAdapter → correct UUIDs in optionalServices
