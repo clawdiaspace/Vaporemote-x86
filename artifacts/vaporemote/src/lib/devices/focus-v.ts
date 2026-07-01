@@ -1,14 +1,10 @@
 import type { VaporizerAdapter, DeviceState, VaporizerCommand } from "../bluetooth";
 import { connectWithServiceFallback } from "./utils";
 
-// ── Focus V Carta / Carta Sport BLE protocol ──────────────────────────────────
-// Telink-based proprietary stack (service fee9, write/notify d44bc439...)
 const CARTA_SERVICE     = "0000fee9-0000-1000-8000-00805f9b34fb";
 const CARTA_WRITE_CHAR  = "d44bc439-abfd-45a2-b575-925416129600";
 const CARTA_NOTIFY_CHAR = "d44bc439-abfd-45a2-b575-925416129601";
 
-// Protocol commands (0xEF header, sub-byte, payload)
-// Source: community RE of Focus V Carta BLE traffic via Telink stack
 const CMD_GET_STATUS  = new Uint8Array([0xef, 0x01, 0x00]);
 const CMD_HEAT_ON     = new Uint8Array([0xef, 0x05, 0x01]);
 const CMD_HEAT_OFF    = new Uint8Array([0xef, 0x05, 0x00]);
@@ -16,7 +12,6 @@ const CMD_GET_BATTERY = new Uint8Array([0xef, 0x0a, 0x00]);
 const CMD_GET_PROFILE = new Uint8Array([0xef, 0x02, 0x00]);
 
 function buildSetTempCmd(celsius: number): Uint8Array {
-  // Encode as °C × 10, big-endian (confirmed Telink pattern)
   const raw = Math.round(celsius * 10);
   return new Uint8Array([0xef, 0x07, (raw >> 8) & 0xff, raw & 0xff]);
 }
@@ -58,21 +53,17 @@ function parseCartaPacket(data: DataView): Partial<DeviceState> & { rawData?: Re
   }
 }
 
-// ── Carta Sport preset profiles ───────────────────────────────────────────────
 export interface CartaSportProfile {
-  index:     number;
-  name:      string;       // German display name
-  nameEn:    string;       // English / device name
-  tempF:     number;       // °F as shown on device (official factory default)
-  tempC:     number;       // °C derived (rounded to 1 decimal)
-  color:     string;       // CSS hex colour matching the device LED
-  rgb:       [number, number, number];  // R,G,B for BLE LED command
-  duration:  number;       // Factory-default session timer in seconds
+  index:    number;
+  name:     string;
+  nameEn:   string;
+  tempF:    number;
+  tempC:    number;
+  color:    string;
+  rgb:      [number, number, number];
+  duration: number;
 }
 
-// Official Focus V Carta Sport factory presets
-// Source: Focus V official user manual, confirmed 2024
-// https://support.focusv.com/article/carta-sport-user-manual
 export const CARTA_SPORT_PROFILES: CartaSportProfile[] = [
   { index: 0, name: "Blau",  nameEn: "Blue",   tempF: 480, tempC: 248.9, color: "#3b82f6", rgb: [ 30, 100, 255], duration: 60 },
   { index: 1, name: "Gelb",  nameEn: "Yellow", tempF: 495, tempC: 257.2, color: "#eab308", rgb: [255, 200,   0], duration: 55 },
@@ -81,17 +72,13 @@ export const CARTA_SPORT_PROFILES: CartaSportProfile[] = [
   { index: 4, name: "Rot",   nameEn: "Red",    tempF: 565, tempC: 296.1, color: "#ef4444", rgb: [255,  20,  20], duration: 40 },
 ];
 
-// ── Carta (original) ──────────────────────────────────────────────────────────
 export function createCartaAdapter(): VaporizerAdapter {
   return createCartaAdapterBase("focus_carta", "Carta", ["CARTA", "Focus V Carta"]);
 }
 
-// ── Carta Sport ───────────────────────────────────────────────────────────────
 export function createCartaSportAdapter(): VaporizerAdapter {
   return createCartaAdapterBase("focus_carta_sport", "Carta Sport", ["CARTA SPORT", "Carta Sport"]);
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 function createCartaAdapterBase(
   deviceType: "focus_carta" | "focus_carta_sport",
@@ -128,12 +115,15 @@ function createCartaAdapterBase(
     manufacturer: "Focus V",
     serviceUUIDs: [CARTA_SERVICE, "6e400001-b5a3-f393-e0a9-e50e24dcca9e"],
     nameFilter,
+    capabilities: {
+      hasHeat: true, hasFan: false, hasLed: true, hasAutoShutoff: false,
+      hasBoost: false, hasProfiles: deviceType === "focus_carta_sport", hasBattery: false, hasCharging: false, hasWorkflows: false,
+    },
 
     async connect(device) {
       const conn = await connectWithServiceFallback(device, CARTA_SERVICE,
         ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"]);
-      server = conn.server;
-      service = conn.service;
+      server = conn.server; service = conn.service;
       if (!service) { cached = { ...cached, connected: true }; return { ...cached }; }
 
       try {
@@ -150,16 +140,11 @@ function createCartaAdapterBase(
         const char = e.target as BluetoothRemoteGATTCharacteristic;
         if (!char.value) return;
         const parsed = parseCartaPacket(char.value);
-        cached = {
-          ...cached,
-          ...parsed,
-          rawData: { ...cached.rawData, ...(parsed.rawData ?? {}) },
-        };
+        cached = { ...cached, ...parsed, rawData: { ...cached.rawData, ...(parsed.rawData ?? {}) } };
         notify();
       };
       notifyChar.addEventListener("characteristicvaluechanged", notifyHandler);
 
-      // Request status every 3 s as keepalive / polling fallback
       pollingInterval = setInterval(() => { send(CMD_GET_STATUS); }, 3000);
 
       await send(CMD_GET_STATUS);
@@ -184,20 +169,17 @@ function createCartaAdapterBase(
         case "set_temperature":
           await send(buildSetTempCmd(cmd.value ?? 200));
           cached.targetTemperature = cmd.value ?? 200;
-          cached.activeProfile = null; // custom temp clears profile
+          cached.activeProfile = null;
           break;
         case "set_profile": {
           const idx = cmd.value ?? 0;
           const profile = CARTA_SPORT_PROFILES[idx];
           if (profile) {
-            // 1. Set target temperature
             await send(buildSetTempCmd(profile.tempC));
             cached.targetTemperature = profile.tempC;
             cached.activeProfile = idx;
-            // 2. Set LED colour to match the profile colour
             const [r, g, b] = profile.rgb;
             await send(buildSetLEDCmd(r, g, b));
-            // 3. Set session timer to factory-default duration for this profile
             await send(buildSetTimerCmd(profile.duration));
           }
           break;

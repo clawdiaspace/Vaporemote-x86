@@ -17,14 +17,8 @@ const PK_CHAR_STATE      = "06aa1521-f22a-11e3-9ddd-0002a5d5c51b";
 const PK_CHAR_BATTERY    = "06aa1522-f22a-11e3-9ddd-0002a5d5c51b";
 
 const PEAK_PRO_STATES: Record<number, string> = {
-  0: "Off",
-  1: "Sleep",
-  2: "Idle",
-  3: "Temp Select",
-  4: "Heating",
-  5: "Session",
-  6: "Boost",
-  7: "Cooling",
+  0: "Off", 1: "Sleep", 2: "Idle", 3: "Temp Select",
+  4: "Heating", 5: "Session", 6: "Boost", 7: "Cooling",
 };
 
 function fToC(f: number) { return Math.round((f - 32) * 5 / 9 * 10) / 10; }
@@ -56,11 +50,8 @@ export function createPuffcoPeakProAdapter(): VaporizerAdapter {
 
     if (isPeakPro()) {
       const [tRaw, tgtRaw, stateRaw, battRaw, dabsRaw] = await Promise.all([
-        readChar(PP_CHAR_TEMP),
-        readChar(PP_CHAR_PROFILE_T),
-        readChar(PP_CHAR_STATE),
-        readChar(PP_CHAR_BATTERY),
-        readChar(PP_CHAR_TOTAL_DABS),
+        readChar(PP_CHAR_TEMP), readChar(PP_CHAR_PROFILE_T), readChar(PP_CHAR_STATE),
+        readChar(PP_CHAR_BATTERY), readChar(PP_CHAR_TOTAL_DABS),
       ]);
       const stateCode = stateRaw ? stateRaw.getUint8(0) : 0;
       const tempF = tRaw ? tRaw.getUint16(0, true) / 10 : null;
@@ -84,10 +75,7 @@ export function createPuffcoPeakProAdapter(): VaporizerAdapter {
       };
     } else {
       const [tRaw, tgtRaw, stateRaw, battRaw] = await Promise.all([
-        readChar(PK_CHAR_TEMP),
-        readChar(PK_CHAR_TARGET),
-        readChar(PK_CHAR_STATE),
-        readChar(PK_CHAR_BATTERY),
+        readChar(PK_CHAR_TEMP), readChar(PK_CHAR_TARGET), readChar(PK_CHAR_STATE), readChar(PK_CHAR_BATTERY),
       ]);
       const stateCode = stateRaw ? stateRaw.getUint8(0) : 0;
       const tempF = tRaw ? tRaw.getFloat32(0, true) : null;
@@ -99,12 +87,7 @@ export function createPuffcoPeakProAdapter(): VaporizerAdapter {
         targetTemperature: targetF !== null ? fToC(targetF) : cached.targetTemperature,
         isHeating: stateCode === 4 || stateCode === 5,
         batteryLevel: battRaw ? battRaw.getUint8(0) : cached.batteryLevel,
-        rawData: {
-          state_code: stateCode,
-          temperature_f: tempF,
-          target_f: targetF,
-          service: "Peak (06aa)",
-        },
+        rawData: { state_code: stateCode, temperature_f: tempF, target_f: targetF, service: "Peak (06aa)" },
       };
     }
     return cached;
@@ -116,12 +99,14 @@ export function createPuffcoPeakProAdapter(): VaporizerAdapter {
     manufacturer: "Puffco",
     serviceUUIDs: [PEAK_PRO_SERVICE, PEAK_SERVICE],
     nameFilter: ["Peak Pro", "Puffco"],
+    capabilities: {
+      hasHeat: true, hasFan: false, hasLed: false, hasAutoShutoff: false,
+      hasBoost: true, hasProfiles: false, hasBattery: true, hasCharging: false, hasWorkflows: false,
+    },
 
     async connect(device) {
       const conn = await connectWithServiceFallback(device, PEAK_PRO_SERVICE, [PEAK_SERVICE]);
-      server = conn.server;
-      service = conn.service;
-      usedServiceUUID = conn.serviceUUID;
+      server = conn.server; service = conn.service; usedServiceUUID = conn.serviceUUID;
       cached = { ...cached, connected: true };
 
       if (service && isPeakPro()) {
@@ -218,5 +203,9 @@ export function createPuffcoPeakAdapter(): VaporizerAdapter {
     displayName: "Peak",
     nameFilter: ["Peak"],
     serviceUUIDs: [PEAK_SERVICE, PEAK_PRO_SERVICE],
+    capabilities: {
+      hasHeat: true, hasFan: false, hasLed: false, hasAutoShutoff: false,
+      hasBoost: false, hasProfiles: false, hasBattery: true, hasCharging: false, hasWorkflows: false,
+    },
   };
 }

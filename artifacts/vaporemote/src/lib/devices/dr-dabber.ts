@@ -26,13 +26,8 @@ function createSwitchAdapter(
   let pollingInterval: ReturnType<typeof setInterval> | null = null;
 
   let cached: DeviceState = {
-    connected: false,
-    temperature: null,
-    targetTemperature: null,
-    isHeating: false,
-    batteryLevel: null,
-    mode: "conduction",
-    rawData: {},
+    connected: false, temperature: null, targetTemperature: null,
+    isHeating: false, batteryLevel: null, mode: "conduction", rawData: {},
   };
 
   function parseResponse(data: DataView): Partial<DeviceState> & { rawData?: Record<string, unknown> } {
@@ -75,11 +70,14 @@ function createSwitchAdapter(
     manufacturer: "Dr. Dabber",
     serviceUUIDs: [SWITCH_SERVICE],
     nameFilter,
+    capabilities: {
+      hasHeat: true, hasFan: false, hasLed: false, hasAutoShutoff: false,
+      hasBoost: false, hasProfiles: false, hasBattery: true, hasCharging: false, hasWorkflows: false,
+    },
 
     async connect(device) {
       const conn = await connectWithServiceFallback(device, SWITCH_SERVICE);
-      server = conn.server;
-      service = conn.service;
+      server = conn.server; service = conn.service;
       if (!service) { cached = { ...cached, connected: true }; return { ...cached }; }
       try {
         writeChar = await service.getCharacteristic(SWITCH_WRITE_CHAR);
@@ -90,11 +88,7 @@ function createSwitchAdapter(
       notifyHandler = (e) => {
         const ch = e.target as BluetoothRemoteGATTCharacteristic;
         const parsed = parseResponse(ch.value!);
-        cached = {
-          ...cached,
-          ...parsed,
-          rawData: { ...cached.rawData, ...(parsed.rawData ?? {}) },
-        };
+        cached = { ...cached, ...parsed, rawData: { ...cached.rawData, ...(parsed.rawData ?? {}) } };
         subscribers.forEach(cb => cb({ ...cached }));
       };
       readChar.addEventListener("characteristicvaluechanged", notifyHandler);

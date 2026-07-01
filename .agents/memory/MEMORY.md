@@ -1,2 +1,3 @@
 - [VapoRemote BLE patterns](vaporemote-ble.md) — BLE adapter patterns, known UUIDs, protocol notes for all supported vaporizers
 - [VapoRemote known bugs](vaporemote-bugs.md) — pre-existing TypeScript Web Bluetooth type errors are non-blocking (Vite/esbuild doesn't type-check)
+- [VapoRemote architecture decisions](vaporemote-architecture.md) — duplicate page file pitfall, GroupCard hook-in-loop, connectDevice onClick wrapper, capability flags, storage keys

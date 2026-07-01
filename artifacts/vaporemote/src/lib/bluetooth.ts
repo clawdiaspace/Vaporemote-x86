@@ -39,9 +39,8 @@ export interface DeviceState {
   boostActive?: boolean;
   boostTemperature?: number | null;
   activeProfile?: number | null;
-  // Volcano Hybrid extended state
-  isReady?: boolean;        // at target temperature
-  isCharging?: boolean;     // battery charging
+  isReady?: boolean;
+  isCharging?: boolean;
   ledBrightness?: number | null;
   autoShutoffMinutes?: number | null;
   firmwareVersion?: string | null;
@@ -70,10 +69,35 @@ export interface VaporizerCommand {
     | "set_profile"
     | "set_led_brightness"
     | "set_auto_shutoff"
-    | "set_session_duration";
+    | "set_session_duration"
+    | "set_precision_mode";
   value?: number;
   rgb?: [number, number, number];
 }
+
+export interface AdapterCapabilities {
+  hasHeat: boolean;
+  hasFan: boolean;
+  hasLed: boolean;
+  hasAutoShutoff: boolean;
+  hasBoost: boolean;
+  hasProfiles: boolean;
+  hasBattery: boolean;
+  hasCharging: boolean;
+  hasWorkflows: boolean;
+}
+
+export const DEFAULT_CAPABILITIES: AdapterCapabilities = {
+  hasHeat: false,
+  hasFan: false,
+  hasLed: false,
+  hasAutoShutoff: false,
+  hasBoost: false,
+  hasProfiles: false,
+  hasBattery: false,
+  hasCharging: false,
+  hasWorkflows: false,
+};
 
 export interface VaporizerAdapter {
   deviceType: VaporizerType;
@@ -81,6 +105,9 @@ export interface VaporizerAdapter {
   manufacturer: string;
   serviceUUIDs: string[];
   nameFilter?: string | string[];
+  capabilities?: AdapterCapabilities;
+  statusNote?: string;
+  hidden?: boolean;
   connect(device: BluetoothDevice): Promise<DeviceState>;
   disconnect(): Promise<void>;
   getState(): Promise<DeviceState>;

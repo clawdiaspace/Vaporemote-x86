@@ -22,6 +22,26 @@ export {
   createArizerAirAdapter, createPax3Adapter, createDaVinciIQ2Adapter,
 } from "./additional";
 
+function createVolcanoClassicPlaceholder(): VaporizerAdapter {
+  return {
+    deviceType: "volcano_classic",
+    displayName: "Volcano Classic",
+    manufacturer: "Storz & Bickel",
+    serviceUUIDs: [],
+    hidden: true,
+    capabilities: {
+      hasHeat: false, hasFan: false, hasLed: false, hasAutoShutoff: false,
+      hasBoost: false, hasProfiles: false, hasBattery: false, hasCharging: false, hasWorkflows: false,
+    },
+    statusNote: "No BLE radio — not connectable",
+    async connect() { throw new Error("Volcano Classic has no BLE radio"); },
+    async disconnect() {},
+    async getState() { return { connected: false, temperature: null, targetTemperature: null, isHeating: false, batteryLevel: null, mode: null }; },
+    async sendCommand() {},
+    subscribeToUpdates() { return () => {}; },
+  };
+}
+
 export function getAllAdapters(): VaporizerAdapter[] {
   return [
     createVolcanoHybridAdapter(),
@@ -37,6 +57,26 @@ export function getAllAdapters(): VaporizerAdapter[] {
     createArizerAirAdapter(),
     createPax3Adapter(),
     createDaVinciIQ2Adapter(),
+    createVolcanoClassicPlaceholder(),
+  ].filter(a => !a.hidden);
+}
+
+export function getAllAdaptersIncludingHidden(): VaporizerAdapter[] {
+  return [
+    createVolcanoHybridAdapter(),
+    createVentyAdapter(),
+    createCraftyPlusAdapter(),
+    createPuffcoPeakAdapter(),
+    createPuffcoPeakProAdapter(),
+    createCartaSportAdapter(),
+    createCartaAdapter(),
+    createDrDabberSwitchAdapter(),
+    createDrDabberBoostEvoAdapter(),
+    createArizerSoloAdapter(),
+    createArizerAirAdapter(),
+    createPax3Adapter(),
+    createDaVinciIQ2Adapter(),
+    createVolcanoClassicPlaceholder(),
   ];
 }
 

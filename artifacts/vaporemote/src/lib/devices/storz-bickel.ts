@@ -5,42 +5,42 @@ import { connectWithServiceFallback } from "./utils";
 const SB = "5354-4f52-5a26-4249434b454c";
 
 // ─── Volcano Hybrid (service 10110000) ───────────────────────────────────────
-// Source: firsttris/reactive-volcano-app, ckskate/Vulcan, storz-rs (all verified)
 const VOL_SVC              = `10110000-${SB}`;
-const VOL_CUR_TEMP         = `10110001-${SB}`;  // Read/Notify  uint16 LE °C×10
-const VOL_TGT_TEMP         = `10110003-${SB}`;  // Read/Write   uint16 LE °C×10
-const VOL_TEMP_UNIT        = `10110004-${SB}`;  // Read/Write   uint8  0=°C 1=°F
-const VOL_LED_BRIGHTNESS   = `10110005-${SB}`;  // Read/Write   uint8  0-100
-const VOL_SERIAL           = `10110007-${SB}`;  // Read         string
-const VOL_FIRMWARE         = `10110008-${SB}`;  // Read         string
-const VOL_BLE_FIRMWARE     = `10110009-${SB}`;  // Read         string
-const VOL_STATUS           = `1011000c-${SB}`;  // Read/Notify  uint32 LE bitfield
-//   status bits: 0x0001=heater on, 0x0002=fan on, 0x0010=at-temp, 0x0020=auto-shutoff
-const VOL_HEAT_ON          = `10110010-${SB}`;  // Write        write 0x00 → heater ON
-const VOL_HEAT_OFF         = `10110011-${SB}`;  // Write        write 0x00 → heater OFF
-const VOL_FAN_ON           = `10110013-${SB}`;  // Write        write 0x00 → fan ON
-const VOL_FAN_OFF          = `10110014-${SB}`;  // Write        write 0x00 → fan OFF
-const VOL_AUTO_SHUTOFF     = `10110015-${SB}`;  // Read/Write   uint16 LE minutes (0=off)
-const VOL_WF_STEP_COUNT    = `10110020-${SB}`;  // Read/Write   uint16 LE
-const VOL_WF_STEP_DATA     = `10110021-${SB}`;  // Read/Write   8-byte step struct
-const VOL_WF_CONTROL       = `10110022-${SB}`;  // Write        0x01=start 0x00=stop
-const VOL_BATTERY          = `10110030-${SB}`;  // Read/Notify  uint8  0-100 %
-const VOL_BATTERY_CHARGING = `10110031-${SB}`;  // Read/Notify  uint8  0=no 1=charging
+const VOL_CUR_TEMP         = `10110001-${SB}`;
+const VOL_TGT_TEMP         = `10110003-${SB}`;
+const VOL_TEMP_UNIT        = `10110004-${SB}`;
+const VOL_LED_BRIGHTNESS   = `10110005-${SB}`;
+const VOL_SERIAL           = `10110007-${SB}`;
+const VOL_FIRMWARE         = `10110008-${SB}`;
+const VOL_BLE_FIRMWARE     = `10110009-${SB}`;
+const VOL_STATUS           = `1011000c-${SB}`;
+const VOL_HEAT_ON          = `10110010-${SB}`;
+const VOL_HEAT_OFF         = `10110011-${SB}`;
+const VOL_FAN_ON           = `10110013-${SB}`;
+const VOL_FAN_OFF          = `10110014-${SB}`;
+const VOL_AUTO_SHUTOFF     = `10110015-${SB}`;
+const VOL_WF_STEP_COUNT    = `10110020-${SB}`;
+const VOL_WF_STEP_DATA     = `10110021-${SB}`;
+const VOL_WF_CONTROL       = `10110022-${SB}`;
+const VOL_BATTERY          = `10110030-${SB}`;
+const VOL_BATTERY_CHARGING = `10110031-${SB}`;
 
-// ─── Venty (service 10100000, different chars from Volcano) ──────────────────
-// Source: storz-rs / reactive-volcano-app (confirmed real hardware)
-const VY_SVC     = `10100000-${SB}`;
-const VY_CUR_TEMP = `10100001-${SB}`;  // Read/Notify uint16 LE °C×10
-const VY_TGT_TEMP = `10100003-${SB}`;  // Read/Write  uint16 LE °C×10
-const VY_HEAT     = `10100031-${SB}`;  // Write       0x01=ON  0x00=OFF
-const VY_BOOST    = `10100041-${SB}`;  // Read/Write  uint16 LE °C×10 (booster offset)
-const VY_BATTERY  = `10110001-${SB}`;  // Read/Notify uint8  % (note: 10110 prefix)
+// ─── Venty (service 10100000) ─────────────────────────────────────────────────
+const VY_SVC      = `10100000-${SB}`;
+const VY_CUR_TEMP = `10100001-${SB}`;
+const VY_TGT_TEMP = `10100003-${SB}`;
+const VY_HEAT     = `10100031-${SB}`;
+const VY_BOOST    = `10100041-${SB}`;
+const VY_BATTERY  = `10110001-${SB}`;
 
 // ─── Crafty+ ──────────────────────────────────────────────────────────────────
-const CP_SVC     = "00000001-4c45-4b43-4942-265a524f5453";
-const CP_TEMP    = "00000011-4c45-4b43-4942-265a524f5453";
-const CP_TARGET  = "00000021-4c45-4b43-4942-265a524f5453";
-const CP_BATTERY = "00000031-4c45-4b43-4942-265a524f5453";
+// Community-RE'd GATT profile (service: 00000001-4c45-4b43-4942-265a524f5453)
+const CP_SVC       = "00000001-4c45-4b43-4942-265a524f5453";
+const CP_TEMP      = "00000011-4c45-4b43-4942-265a524f5453";  // Read/Notify uint16 LE °C×10
+const CP_TARGET    = "00000021-4c45-4b43-4942-265a524f5453";  // Read/Write  uint16 LE °C×10
+const CP_BATTERY   = "00000031-4c45-4b43-4942-265a524f5453";  // Read        uint8  %
+const CP_HEAT      = "00000041-4c45-4b43-4942-265a524f5453";  // Write       uint8  1=on 0=off
+const CP_BOOST_TMP = "00000051-4c45-4b43-4942-265a524f5453";  // Read/Write  uint16 LE °C×10
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -55,14 +55,10 @@ function decodeTemp(dv: DataView): number {
 }
 
 function decodeStr(dv: DataView): string {
-  try {
-    return new TextDecoder().decode(dv.buffer);
-  } catch {
-    return "";
-  }
+  try { return new TextDecoder().decode(dv.buffer); }
+  catch { return ""; }
 }
 
-// Write with automatic fallback to write-with-response
 async function safeWrite(char: BluetoothRemoteGATTCharacteristic, value: Uint8Array): Promise<void> {
   try { await char.writeValueWithoutResponse(value); }
   catch { await char.writeValue(value); }
@@ -116,13 +112,9 @@ export function createVolcanoHybridAdapter(): VaporizerAdapter {
 
   async function fetchState(): Promise<DeviceState> {
     const [tRaw, tgtRaw, statusRaw, ledRaw, shutoffRaw, batRaw, chargRaw] = await Promise.all([
-      readChar(VOL_CUR_TEMP),
-      readChar(VOL_TGT_TEMP),
-      readChar(VOL_STATUS),
-      readChar(VOL_LED_BRIGHTNESS),
-      readChar(VOL_AUTO_SHUTOFF),
-      readChar(VOL_BATTERY),
-      readChar(VOL_BATTERY_CHARGING),
+      readChar(VOL_CUR_TEMP), readChar(VOL_TGT_TEMP), readChar(VOL_STATUS),
+      readChar(VOL_LED_BRIGHTNESS), readChar(VOL_AUTO_SHUTOFF),
+      readChar(VOL_BATTERY), readChar(VOL_BATTERY_CHARGING),
     ]);
 
     const status = statusRaw ? parseStatus(statusRaw) : null;
@@ -170,9 +162,7 @@ export function createVolcanoHybridAdapter(): VaporizerAdapter {
 
   async function readInfo() {
     const [fwRaw, bleFwRaw, snRaw] = await Promise.all([
-      readChar(VOL_FIRMWARE),
-      readChar(VOL_BLE_FIRMWARE),
-      readChar(VOL_SERIAL),
+      readChar(VOL_FIRMWARE), readChar(VOL_BLE_FIRMWARE), readChar(VOL_SERIAL),
     ]);
     s = {
       ...s,
@@ -193,14 +183,16 @@ export function createVolcanoHybridAdapter(): VaporizerAdapter {
     manufacturer: "Storz & Bickel",
     serviceUUIDs: [VOL_SVC],
     nameFilter: ["VOLCANO", "Volcano"],
+    capabilities: {
+      hasHeat: true, hasFan: true, hasLed: true, hasAutoShutoff: true,
+      hasBoost: false, hasProfiles: false, hasBattery: true, hasCharging: true, hasWorkflows: true,
+    },
 
     async connect(device) {
       const conn = await connectWithServiceFallback(device, VOL_SVC);
-      server = conn.server;
-      svc    = conn.service;
+      server = conn.server; svc = conn.service;
       s = { ...s, connected: true };
 
-      // Notifications for live temp, status, battery
       await tryNotify(VOL_CUR_TEMP, (dv) => {
         s = { ...s, temperature: decodeTemp(dv), rawData: { ...s.rawData, temp_raw: dv.getUint16(0, true) } };
         subs.forEach(cb => cb({ ...s }));
@@ -219,10 +211,7 @@ export function createVolcanoHybridAdapter(): VaporizerAdapter {
         subs.forEach(cb => cb({ ...s }));
       });
 
-      // Read static info once
       await readInfo();
-
-      // Poll all dynamic state every 2 s as fallback
       pollTimer = setInterval(async () => {
         const st = await fetchState();
         subs.forEach(cb => cb(st));
@@ -284,8 +273,7 @@ export function createVolcanoHybridAdapter(): VaporizerAdapter {
         case "power_off":
           await writeChar(VOL_HEAT_OFF, new Uint8Array([0x00]));
           await writeChar(VOL_FAN_OFF,  new Uint8Array([0x00]));
-          s.isHeating = false;
-          s.fanOn = false;
+          s.isHeating = false; s.fanOn = false;
           break;
       }
       subs.forEach(cb => cb({ ...s }));
@@ -371,11 +359,14 @@ export function createVentyAdapter(): VaporizerAdapter {
     manufacturer: "Storz & Bickel",
     serviceUUIDs: [VY_SVC],
     nameFilter: ["VENTY", "Venty", "VY", "STORZ&BICKEL"],
+    capabilities: {
+      hasHeat: true, hasFan: false, hasLed: false, hasAutoShutoff: false,
+      hasBoost: true, hasProfiles: false, hasBattery: true, hasCharging: false, hasWorkflows: false,
+    },
 
     async connect(device) {
       const conn = await connectWithServiceFallback(device, VY_SVC);
-      server = conn.server;
-      svc    = conn.service;
+      server = conn.server; svc = conn.service;
       cached = { ...cached, connected: true };
 
       await tryNotify(VY_CUR_TEMP, (dv) => {
@@ -445,9 +436,12 @@ export function createCraftyPlusAdapter(): VaporizerAdapter {
   let svc: BluetoothRemoteGATTService | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   const subs: Array<(s: DeviceState) => void> = [];
+  const notifyHandlers: Array<{ char: BluetoothRemoteGATTCharacteristic; fn: (e: Event) => void }> = [];
+
   let cached: DeviceState = {
     connected: false, temperature: null, targetTemperature: null,
     isHeating: false, batteryLevel: null, mode: "conduction",
+    boostTemperature: null,
   };
 
   async function read(uuid: string): Promise<DataView | null> {
@@ -456,15 +450,45 @@ export function createCraftyPlusAdapter(): VaporizerAdapter {
     catch { return null; }
   }
 
+  async function write(uuid: string, value: Uint8Array): Promise<void> {
+    if (!svc) return;
+    try {
+      const c = await svc.getCharacteristic(uuid);
+      await safeWrite(c, value);
+    } catch (e) { console.warn(`Crafty+ write ${uuid}:`, e); }
+  }
+
+  async function tryNotify(uuid: string, onData: (dv: DataView) => void) {
+    if (!svc) return;
+    try {
+      const c = await svc.getCharacteristic(uuid);
+      await c.startNotifications();
+      const fn = (e: Event) => {
+        const val = (e.target as BluetoothRemoteGATTCharacteristic).value;
+        if (val) onData(val);
+      };
+      c.addEventListener("characteristicvaluechanged", fn);
+      notifyHandlers.push({ char: c, fn });
+    } catch { /* polling covers it */ }
+  }
+
   async function fetchState(): Promise<DeviceState> {
-    const [t, tgt, bat] = await Promise.all([read(CP_TEMP), read(CP_TARGET), read(CP_BATTERY)]);
+    const [t, tgt, bat, boost] = await Promise.all([
+      read(CP_TEMP), read(CP_TARGET), read(CP_BATTERY), read(CP_BOOST_TMP),
+    ]);
     cached = {
       ...cached,
       connected:         server?.connected ?? false,
-      temperature:       t   ? decodeTemp(t)   : cached.temperature,
-      targetTemperature: tgt ? decodeTemp(tgt) : cached.targetTemperature,
-      batteryLevel:      bat ? bat.getUint8(0) : cached.batteryLevel,
-      rawData: { temp_raw: t?.getUint16(0,true), target_raw: tgt?.getUint16(0,true), battery: bat?.getUint8(0) },
+      temperature:       t     ? decodeTemp(t)     : cached.temperature,
+      targetTemperature: tgt   ? decodeTemp(tgt)   : cached.targetTemperature,
+      batteryLevel:      bat   ? bat.getUint8(0)   : cached.batteryLevel,
+      boostTemperature:  boost ? decodeTemp(boost) : cached.boostTemperature,
+      rawData: {
+        temp_raw:   t     ? t.getUint16(0, true)     : cached.rawData?.temp_raw,
+        target_raw: tgt   ? tgt.getUint16(0, true)   : cached.rawData?.target_raw,
+        battery:    bat   ? bat.getUint8(0)           : cached.rawData?.battery,
+        boost_raw:  boost ? boost.getUint16(0, true)  : cached.rawData?.boost_raw,
+      },
     };
     return cached;
   }
@@ -475,37 +499,62 @@ export function createCraftyPlusAdapter(): VaporizerAdapter {
     manufacturer: "Storz & Bickel",
     serviceUUIDs: [CP_SVC],
     nameFilter: ["CRAFTY"],
+    capabilities: {
+      hasHeat: true, hasFan: false, hasLed: false, hasAutoShutoff: false,
+      hasBoost: true, hasProfiles: false, hasBattery: true, hasCharging: false, hasWorkflows: false,
+    },
 
     async connect(device) {
       const conn = await connectWithServiceFallback(device, CP_SVC);
-      server = conn.server;
-      svc    = conn.service;
+      server = conn.server; svc = conn.service;
       cached = { ...cached, connected: true };
+
+      await tryNotify(CP_TEMP, (dv) => {
+        cached = { ...cached, temperature: decodeTemp(dv), rawData: { ...cached.rawData, temp_raw: dv.getUint16(0, true) } };
+        subs.forEach(cb => cb({ ...cached }));
+      });
+
       pollTimer = setInterval(async () => {
         const st = await fetchState();
         subs.forEach(cb => cb(st));
       }, 2000);
       return fetchState();
     },
+
     async disconnect() {
       if (pollTimer) clearInterval(pollTimer);
+      for (const { char, fn } of notifyHandlers) {
+        char.removeEventListener("characteristicvaluechanged", fn);
+        await char.stopNotifications().catch(() => {});
+      }
       server?.disconnect();
       cached = { ...cached, connected: false };
     },
+
     async getState() { return fetchState(); },
+
     async sendCommand(cmd) {
-      if (!svc) return;
-      if (cmd.type === "set_temperature") {
-        try {
-          const c = await svc.getCharacteristic(CP_TARGET);
-          await safeWrite(c, encodeTemp(cmd.value ?? 180));
+      switch (cmd.type) {
+        case "set_temperature":
+          await write(CP_TARGET, encodeTemp(cmd.value ?? 180));
           cached.targetTemperature = cmd.value ?? 180;
-        } catch (e) { console.warn("Crafty+ write:", e); }
-      } else if (cmd.type === "toggle_heat") {
-        cached.isHeating = !cached.isHeating;
+          break;
+        case "set_boost_temperature":
+          await write(CP_BOOST_TMP, encodeTemp(cmd.value ?? 195));
+          cached.boostTemperature = cmd.value ?? 195;
+          break;
+        case "toggle_heat":
+          await write(CP_HEAT, new Uint8Array([cached.isHeating ? 0x00 : 0x01]));
+          cached.isHeating = !cached.isHeating;
+          break;
+        case "power_off":
+          await write(CP_HEAT, new Uint8Array([0x00]));
+          cached.isHeating = false;
+          break;
       }
       subs.forEach(cb => cb({ ...cached }));
     },
+
     subscribeToUpdates(cb) {
       subs.push(cb);
       return () => { const i = subs.indexOf(cb); if (i >= 0) subs.splice(i, 1); };
@@ -522,19 +571,15 @@ export interface WorkflowStep {
   fanOn: boolean;
 }
 
-/**
- * Encode a single Volcano Hybrid workflow step (8 bytes):
- * [index:1][type:1][temp:2 LE][duration:2 LE][fan:1][pad:1]
- */
 export function encodeWorkflowStep(index: number, step: WorkflowStep): Uint8Array {
   const buf = new Uint8Array(8);
   const dv  = new DataView(buf.buffer);
   dv.setUint8(0, index);
-  dv.setUint8(1, 0x00); // step type = heat
+  dv.setUint8(1, 0x00);
   dv.setUint16(2, Math.round(step.tempC * 10), true);
   dv.setUint16(4, step.durationSeconds, true);
   dv.setUint8(6, step.fanOn ? 0x01 : 0x00);
-  dv.setUint8(7, 0x00); // padding
+  dv.setUint8(7, 0x00);
   return buf;
 }
 
