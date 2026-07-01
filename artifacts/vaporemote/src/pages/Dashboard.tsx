@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from "react";
 import {
   Bluetooth, Plus, Wind, PowerOff, Thermometer, Battery,
   Clock, Wifi, WifiOff, Flame, PenLine, Check, X, AlarmClock, TimerReset, Zap,
+  BatteryCharging, Sun, Timer, CheckCircle2, Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -248,6 +249,8 @@ function DeviceCard({ device }: { device: ConnectedDevice }) {
   const { settings } = useSettings();
   const [localTarget, setLocalTarget] = useState(device.state.targetTemperature ?? 185);
   const [localBoost, setLocalBoost] = useState(device.state.boostTemperature ?? 15);
+  const [localLed, setLocalLed] = useState(device.state.ledBrightness ?? 100);
+  const [localShutoff, setLocalShutoff] = useState(device.state.autoShutoffMinutes ?? 0);
   const range = DEVICE_TEMP_RANGES[device.deviceType];
   const isVolcano = device.deviceType === "volcano_hybrid";
   const isVenty = device.deviceType === "venty";
@@ -280,6 +283,16 @@ function DeviceCard({ device }: { device: ConnectedDevice }) {
     heatOff(device.id);
   }, [device.id, heatOff]);
 
+  const handleSetLed = useCallback((val: number[]) => {
+    setLocalLed(val[0]);
+    sendCommand(device.id, { type: "set_led_brightness", value: val[0] });
+  }, [device.id, sendCommand]);
+
+  const handleSetShutoff = useCallback((val: number[]) => {
+    setLocalShutoff(val[0]);
+    sendCommand(device.id, { type: "set_auto_shutoff", value: val[0] });
+  }, [device.id, sendCommand]);
+
   return (
     <Card
       data-testid={`device-card-${device.id}`}
@@ -299,7 +312,7 @@ function DeviceCard({ device }: { device: ConnectedDevice }) {
             <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-widest mb-1 opacity-70">{device.manufacturer}</p>
             <CardTitle className="text-xl font-medium tracking-tight">{device.displayName}</CardTitle>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             {device.state.connected ? (
               <Badge variant="default" className="bg-primary/10 text-primary border-primary/20 text-[10px] uppercase font-bold tracking-wider px-2 shadow-[0_0_10px_rgba(249,115,22,0.1)]">
                 <Wifi size={10} className="mr-1.5 opacity-80" /> Live
@@ -309,9 +322,17 @@ function DeviceCard({ device }: { device: ConnectedDevice }) {
                 <WifiOff size={10} className="mr-1.5" /> Offline
               </Badge>
             )}
+            {isVolcano && device.state.isReady && (
+              <Badge variant="default" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] uppercase font-bold tracking-wider px-2">
+                <CheckCircle2 size={10} className="mr-1.5" /> At Temp
+              </Badge>
+            )}
             {device.state.batteryLevel !== null && (
               <div data-testid={`battery-${device.id}`} className={`flex items-center gap-1.5 text-xs font-mono ${device.state.batteryLevel < 20 ? "text-destructive" : "text-muted-foreground"}`}>
-                <Battery size={14} className="opacity-80" />
+                {device.state.isCharging
+                  ? <BatteryCharging size={14} className="text-emerald-400" />
+                  : <Battery size={14} className="opacity-80" />
+                }
                 <span>{device.state.batteryLevel}%</span>
               </div>
             )}
@@ -470,12 +491,12 @@ function DeviceCard({ device }: { device: ConnectedDevice }) {
             </Button>
           )}
 
-          {isVolcano && device.state.fanSpeed !== undefined && (
+          {isVolcano && (
             <Button
               data-testid={`fan-button-${device.id}`}
               variant={device.state.fanOn ? "default" : "secondary"}
               size="icon"
-              className={`h-12 w-12 ${device.state.fanOn ? "bg-primary shadow-[0_0_10px_rgba(249,115,22,0.3)]" : "bg-muted/50"}`}
+              className={`h-12 w-12 transition-all duration-300 ${device.state.fanOn ? "bg-primary shadow-[0_0_10px_rgba(249,115,22,0.3)]" : "bg-muted/50"}`}
               onClick={() => sendCommand(device.id, { type: "toggle_fan" })}
               disabled={!device.state.connected}
               title={device.state.fanOn ? "Pumpe stoppen" : "Pumpe starten"}
@@ -498,6 +519,68 @@ function DeviceCard({ device }: { device: ConnectedDevice }) {
             <PowerOff size={18} className="opacity-70" />
           </Button>
         </div>
+
+        {/* Volcano Hybrid — LED & Auto-Shutoff Settings */}
+        {isVolcano && (
+          <div className="space-y-4 bg-black/20 p-4 rounded-xl border border-white/5">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold flex items-center gap-1.5">
+              <Info size={10} /> Volcano Einstellungen
+            </span>
+
+            {/* LED Brightness */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Sun size={10} /> LED Helligkeit
+                </span>
+                <span className="text-[10px] font-mono text-primary font-bold">{localLed}%</span>
+              </div>
+              <Slider
+                min={0} max={100} step={5}
+                value={[localLed]}
+                onValueChange={handleSetLed}
+                disabled={!device.state.connected}
+                className="w-full"
+              />
+            </div>
+
+            {/* Auto-Shutoff */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Timer size={10} /> Auto-Abschaltung
+                </span>
+                <span className="text-[10px] font-mono text-primary font-bold">
+                  {localShutoff === 0 ? "Aus" : `${localShutoff} min`}
+                </span>
+              </div>
+              <Slider
+                min={0} max={60} step={5}
+                value={[localShutoff]}
+                onValueChange={handleSetShutoff}
+                disabled={!device.state.connected}
+                className="w-full"
+              />
+              <p className="text-[9px] text-muted-foreground/60">0 = deaktiviert · max. 60 Minuten</p>
+            </div>
+
+            {/* Firmware / Serial */}
+            {(device.state.firmwareVersion || device.state.serial) && (
+              <div className="flex flex-wrap gap-3 pt-1 border-t border-white/5">
+                {device.state.firmwareVersion && (
+                  <span className="text-[9px] font-mono text-muted-foreground/50">
+                    FW {device.state.firmwareVersion}
+                  </span>
+                )}
+                {device.state.serial && (
+                  <span className="text-[9px] font-mono text-muted-foreground/50">
+                    S/N {device.state.serial}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {isVolcano && (
           <VolcanoRoutines

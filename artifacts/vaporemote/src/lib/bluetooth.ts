@@ -39,6 +39,13 @@ export interface DeviceState {
   boostActive?: boolean;
   boostTemperature?: number | null;
   activeProfile?: number | null;
+  // Volcano Hybrid extended state
+  isReady?: boolean;        // at target temperature
+  isCharging?: boolean;     // battery charging
+  ledBrightness?: number | null;
+  autoShutoffMinutes?: number | null;
+  firmwareVersion?: string | null;
+  serial?: string | null;
   rawData?: Record<string, unknown>;
 }
 
@@ -60,7 +67,9 @@ export interface VaporizerCommand {
     | "toggle_fan"
     | "boost"
     | "power_off"
-    | "set_profile";
+    | "set_profile"
+    | "set_led_brightness"
+    | "set_auto_shutoff";
   value?: number;
 }
 

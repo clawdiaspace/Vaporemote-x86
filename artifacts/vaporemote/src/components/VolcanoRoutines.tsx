@@ -50,6 +50,7 @@ export default function VolcanoRoutines({ deviceId, connected, onSendCommand }: 
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
     setRunState(null);
+    // Explicitly turn fan OFF on stop (uses separate FAN_OFF characteristic)
     onSendCommand({ type: "toggle_fan" }).catch(() => {});
   }, [onSendCommand]);
 
@@ -58,15 +59,20 @@ export default function VolcanoRoutines({ deviceId, connected, onSendCommand }: 
     cancelRef.current = false;
     setRunState({ routineId: routine.id, stepIndex: 0, remaining: 0 });
 
+    // Track logical fan state so pump_on/pump_off send to correct ON/OFF characteristic
+    let fanIsOn = false;
+
     for (let i = 0; i < routine.steps.length; i++) {
       if (cancelRef.current) return;
       const step = routine.steps[i];
       setRunState({ routineId: routine.id, stepIndex: i, remaining: step.durationSeconds });
 
-      if (step.type === "pump_on") {
-        await onSendCommand({ type: "toggle_fan" });
-      } else if (step.type === "pump_off") {
-        await onSendCommand({ type: "toggle_fan" });
+      if (step.type === "pump_on" && !fanIsOn) {
+        await onSendCommand({ type: "toggle_fan" }); // adapter checks state → sends FAN_ON
+        fanIsOn = true;
+      } else if (step.type === "pump_off" && fanIsOn) {
+        await onSendCommand({ type: "toggle_fan" }); // adapter checks state → sends FAN_OFF
+        fanIsOn = false;
       }
 
       if (step.durationSeconds > 0) {
