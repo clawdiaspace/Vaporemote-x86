@@ -1,4 +1,5 @@
 import type { VaporizerAdapter, DeviceState, VaporizerCommand } from "../bluetooth";
+import { connectWithServiceFallback } from "./utils";
 
 const CARTA_SERVICE     = "0000fee9-0000-1000-8000-00805f9b34fb";
 const CARTA_WRITE_CHAR  = "d44bc439-abfd-45a2-b575-925416129600";
@@ -80,14 +81,19 @@ function createCartaAdapterBase(
     deviceType,
     displayName,
     manufacturer: "Focus V",
-    serviceUUIDs: [CARTA_SERVICE],
+    serviceUUIDs: [CARTA_SERVICE, "6e400001-b5a3-f393-e0a9-e50e24dcca9e"],
     nameFilter,
 
     async connect(device) {
-      server = await device.gatt!.connect();
-      service = await server.getPrimaryService(CARTA_SERVICE);
-      writeChar = await service.getCharacteristic(CARTA_WRITE_CHAR);
-      notifyChar = await service.getCharacteristic(CARTA_NOTIFY_CHAR);
+      const conn = await connectWithServiceFallback(device, CARTA_SERVICE,
+        ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"]);
+      server = conn.server;
+      service = conn.service;
+      if (!service) { cached = { ...cached, connected: true }; return { ...cached }; }
+      try {
+        writeChar = await service.getCharacteristic(CARTA_WRITE_CHAR);
+        notifyChar = await service.getCharacteristic(CARTA_NOTIFY_CHAR);
+      } catch { cached = { ...cached, connected: true }; return { ...cached }; }
 
       await notifyChar.startNotifications();
       notifyHandler = (e) => {

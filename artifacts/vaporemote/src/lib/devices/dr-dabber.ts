@@ -1,4 +1,5 @@
 import type { VaporizerAdapter, DeviceState, VaporizerCommand } from "../bluetooth";
+import { connectWithServiceFallback } from "./utils";
 
 const SWITCH_SERVICE    = "000060aa-0000-1000-8000-00805f9b34fb";
 const SWITCH_WRITE_CHAR = "0000eee1-0000-1000-8000-00805f9b34fb";
@@ -76,10 +77,14 @@ function createSwitchAdapter(
     nameFilter,
 
     async connect(device) {
-      server = await device.gatt!.connect();
-      service = await server.getPrimaryService(SWITCH_SERVICE);
-      writeChar = await service.getCharacteristic(SWITCH_WRITE_CHAR);
-      readChar  = await service.getCharacteristic(SWITCH_READ_CHAR);
+      const conn = await connectWithServiceFallback(device, SWITCH_SERVICE);
+      server = conn.server;
+      service = conn.service;
+      if (!service) { cached = { ...cached, connected: true }; return { ...cached }; }
+      try {
+        writeChar = await service.getCharacteristic(SWITCH_WRITE_CHAR);
+        readChar  = await service.getCharacteristic(SWITCH_READ_CHAR);
+      } catch { cached = { ...cached, connected: true }; return { ...cached }; }
 
       await readChar.startNotifications();
       notifyHandler = (e) => {

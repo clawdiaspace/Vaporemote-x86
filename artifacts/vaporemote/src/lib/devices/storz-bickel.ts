@@ -1,4 +1,5 @@
 import type { VaporizerAdapter, DeviceState, VaporizerCommand } from "../bluetooth";
+import { connectWithServiceFallback } from "./utils";
 
 const SB_SUFFIX = "5354-4f52-5a26-4249434b454c";
 
@@ -83,17 +84,13 @@ export function createVolcanoHybridAdapter(): VaporizerAdapter {
     deviceType: "volcano_hybrid",
     displayName: "Volcano Hybrid",
     manufacturer: "Storz & Bickel",
-    serviceUUIDs: [VOL_PRIMARY_SERVICE],
+    serviceUUIDs: [VOL_PRIMARY_SERVICE, `10110000-${SB_SUFFIX}`],
     nameFilter: ["VOLCANO"],
 
     async connect(device) {
-      server = await device.gatt!.connect();
-      try {
-        primaryService = await server.getPrimaryService(VOL_PRIMARY_SERVICE);
-      } catch {
-        const allServices = await server.getPrimaryServices();
-        primaryService = allServices[0] ?? null;
-      }
+      const conn = await connectWithServiceFallback(device, VOL_PRIMARY_SERVICE, [`10110000-${SB_SUFFIX}`]);
+      server = conn.server;
+      primaryService = conn.service;
       cachedState = { ...cachedState, connected: true };
 
       pollingInterval = setInterval(async () => {
@@ -239,8 +236,9 @@ export function createVentyAdapter(): VaporizerAdapter {
     nameFilter: ["VY"],
 
     async connect(device) {
-      server = await device.gatt!.connect();
-      service = await server.getPrimaryService(VENTY_SERVICE);
+      const conn = await connectWithServiceFallback(device, VENTY_SERVICE);
+      server = conn.server;
+      service = conn.service;
       cached = { ...cached, connected: true };
 
       await trySubscribeNotify(VENTY_CHAR_TEMP, (dv) => {
@@ -344,8 +342,9 @@ export function createCraftyPlusAdapter(): VaporizerAdapter {
     nameFilter: ["CRAFTY"],
 
     async connect(device) {
-      server = await device.gatt!.connect();
-      service = await server.getPrimaryService(CRAFTY_SERVICE);
+      const conn = await connectWithServiceFallback(device, CRAFTY_SERVICE);
+      server = conn.server;
+      service = conn.service;
       cached = { ...cached, connected: true };
       pollingInterval = setInterval(async () => {
         const s = await fetchState();

@@ -1,4 +1,5 @@
 import type { VaporizerAdapter, DeviceState, VaporizerCommand } from "../bluetooth";
+import { connectWithServiceFallback } from "./utils";
 
 function createGenericPollingAdapter(config: {
   deviceType: "arizer_solo" | "arizer_air" | "pax3" | "davinci_iq2";
@@ -67,8 +68,9 @@ function createGenericPollingAdapter(config: {
     nameFilter: config.nameFilter,
 
     async connect(device) {
-      server = await device.gatt!.connect();
-      service = await server.getPrimaryService(config.serviceUUID);
+      const conn = await connectWithServiceFallback(device, config.serviceUUID);
+      server = conn.server;
+      service = conn.service;
       cached = { ...cached, connected: true };
       pollingInterval = setInterval(async () => {
         const s = await fetchState();

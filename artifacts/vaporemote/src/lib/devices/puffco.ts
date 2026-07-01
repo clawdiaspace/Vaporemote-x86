@@ -1,138 +1,152 @@
 import type { VaporizerAdapter, DeviceState, VaporizerCommand } from "../bluetooth";
+import { connectWithServiceFallback } from "./utils";
 
-const PUFFCO_SERVICE      = "06aa1910-f22a-11e3-9daa-0002a5d5c51b";
-const PUFFCO_CHAR_TEMP    = "06aa1520-f22a-11e3-9daa-0002a5d5c51b";
-const PUFFCO_CHAR_TARGET  = "06aa1524-f22a-11e3-9daa-0002a5d5c51b";
-const PUFFCO_CHAR_STATE   = "06aa1521-f22a-11e3-9daa-0002a5d5c51b";
-const PUFFCO_CHAR_BATTERY = "06aa1522-f22a-11e3-9daa-0002a5d5c51b";
-const PUFFCO_CHAR_PROFILE = "06aa1523-f22a-11e3-9daa-0002a5d5c51b";
+const SFX = "0951-4504-bfd9-eb0b66e1c6e0";
+const PEAK_PRO_SERVICE   = `f0cd1900-${SFX}`;
+const PP_CHAR_TEMP       = `f0cd1400-${SFX}`;
+const PP_CHAR_PROFILE_T  = `f0cd1500-${SFX}`;
+const PP_CHAR_STATE      = `f0cd0300-${SFX}`;
+const PP_CHAR_HEAT_CMD   = `f0cd0400-${SFX}`;
+const PP_CHAR_BATTERY    = `f0cd0900-${SFX}`;
+const PP_CHAR_TOTAL_DABS = `f0cd0b00-${SFX}`;
 
-const PUFFCO_STATES: Record<number, string> = {
-  0: "OFF",
-  1: "SLEEP",
-  2: "IDLE",
-  3: "TEMP_SELECT",
-  4: "HEATING",
-  5: "SESH",
-  6: "BOOST",
+const PEAK_SERVICE       = "06aa1910-f22a-11e3-9ddd-0002a5d5c51b";
+const PK_CHAR_TEMP       = "06aa1520-f22a-11e3-9ddd-0002a5d5c51b";
+const PK_CHAR_TARGET     = "06aa1524-f22a-11e3-9ddd-0002a5d5c51b";
+const PK_CHAR_STATE      = "06aa1521-f22a-11e3-9ddd-0002a5d5c51b";
+const PK_CHAR_BATTERY    = "06aa1522-f22a-11e3-9ddd-0002a5d5c51b";
+
+const PEAK_PRO_STATES: Record<number, string> = {
+  0: "Off",
+  1: "Sleep",
+  2: "Idle",
+  3: "Temp Select",
+  4: "Heating",
+  5: "Session",
+  6: "Boost",
+  7: "Cooling",
 };
 
-const PUFFCO_PROFILES: Record<number, string> = {
-  0: "Sesh",
-  1: "Flavor",
-  2: "Boost",
-  3: "Efficiency",
-  4: "Custom",
-};
+function fToC(f: number) { return Math.round((f - 32) * 5 / 9 * 10) / 10; }
+function cToF(c: number) { return c * 9 / 5 + 32; }
 
-function createPuffcoAdapter(
-  deviceType: "puffco_peak" | "puffco_peak_pro",
-  displayName: string,
-  nameFilter: string | string[]
-): VaporizerAdapter {
+export function createPuffcoPeakProAdapter(): VaporizerAdapter {
   let server: BluetoothRemoteGATTServer | null = null;
   let service: BluetoothRemoteGATTService | null = null;
+  let usedServiceUUID: string | null = null;
   const subscribers: Array<(s: DeviceState) => void> = [];
+  let notifyCleanup: (() => void) | null = null;
   let pollingInterval: ReturnType<typeof setInterval> | null = null;
-  let notifyUnsubscribe: (() => void) | null = null;
+
   let cached: DeviceState = {
-    connected: false,
-    temperature: null,
-    targetTemperature: null,
-    isHeating: false,
-    batteryLevel: null,
-    mode: "conduction",
-    rawData: {},
+    connected: false, temperature: null, targetTemperature: null,
+    isHeating: false, batteryLevel: null, mode: "conduction", rawData: {},
   };
 
-  async function read(uuid: string): Promise<DataView | null> {
+  async function readChar(uuid: string): Promise<DataView | null> {
     if (!service) return null;
     try { return await (await service.getCharacteristic(uuid)).readValue(); }
     catch { return null; }
   }
 
-  async function write(uuid: string, data: Uint8Array): Promise<void> {
-    if (!service) return;
-    try {
-      const char = await service.getCharacteristic(uuid);
-      await char.writeValueWithoutResponse(data);
-    } catch (e) { console.error("Puffco write error:", e); }
-  }
-
-  function celsiusToF(c: number) { return c * 9 / 5 + 32; }
-  function fToCelsius(f: number) { return (f - 32) * 5 / 9; }
+  function isPeakPro() { return usedServiceUUID === PEAK_PRO_SERVICE; }
 
   async function fetchState(): Promise<DeviceState> {
-    const [tempVal, targetVal, stateVal, batteryVal, profileVal] = await Promise.all([
-      read(PUFFCO_CHAR_TEMP),
-      read(PUFFCO_CHAR_TARGET),
-      read(PUFFCO_CHAR_STATE),
-      read(PUFFCO_CHAR_BATTERY),
-      read(PUFFCO_CHAR_PROFILE),
-    ]);
+    if (!service) return cached;
 
-    const stateCode = stateVal ? stateVal.getUint8(0) : 0;
-    const profileCode = profileVal ? profileVal.getUint8(0) : 0;
-
-    const tempF = tempVal ? tempVal.getFloat32(0, true) : null;
-    const targetF = targetVal ? targetVal.getFloat32(0, true) : null;
-
-    cached = {
-      ...cached,
-      connected: server?.connected ?? false,
-      temperature: tempF !== null ? fToCelsius(tempF) : cached.temperature,
-      targetTemperature: targetF !== null ? fToCelsius(targetF) : cached.targetTemperature,
-      isHeating: stateCode === 4 || stateCode === 5 || stateCode === 6,
-      batteryLevel: batteryVal ? batteryVal.getUint8(0) : cached.batteryLevel,
-      boostActive: stateCode === 6,
-      rawData: {
-        state_code: stateCode,
-        state_name: PUFFCO_STATES[stateCode] ?? "UNKNOWN",
-        profile_code: profileCode,
-        profile_name: PUFFCO_PROFILES[profileCode] ?? "Unknown",
-        temperature_f: tempF,
-        target_temp_f: targetF,
-        battery_raw: batteryVal ? batteryVal.getUint8(0) : null,
-      },
-    };
+    if (isPeakPro()) {
+      const [tRaw, tgtRaw, stateRaw, battRaw, dabsRaw] = await Promise.all([
+        readChar(PP_CHAR_TEMP),
+        readChar(PP_CHAR_PROFILE_T),
+        readChar(PP_CHAR_STATE),
+        readChar(PP_CHAR_BATTERY),
+        readChar(PP_CHAR_TOTAL_DABS),
+      ]);
+      const stateCode = stateRaw ? stateRaw.getUint8(0) : 0;
+      const tempF = tRaw ? tRaw.getUint16(0, true) / 10 : null;
+      const targetF = tgtRaw ? tgtRaw.getUint16(0, true) / 10 : null;
+      cached = {
+        ...cached,
+        connected: server?.connected ?? false,
+        temperature: tempF !== null ? fToC(tempF) : cached.temperature,
+        targetTemperature: targetF !== null ? fToC(targetF) : cached.targetTemperature,
+        isHeating: stateCode === 4 || stateCode === 5 || stateCode === 6,
+        batteryLevel: battRaw ? battRaw.getUint8(0) : cached.batteryLevel,
+        boostActive: stateCode === 6,
+        rawData: {
+          state: PEAK_PRO_STATES[stateCode] ?? `Unknown (${stateCode})`,
+          state_code: stateCode,
+          temperature_f: tempF,
+          target_f: targetF,
+          total_dabs: dabsRaw ? dabsRaw.getUint32(0, true) : null,
+          service: "Peak Pro (f0cd)",
+        },
+      };
+    } else {
+      const [tRaw, tgtRaw, stateRaw, battRaw] = await Promise.all([
+        readChar(PK_CHAR_TEMP),
+        readChar(PK_CHAR_TARGET),
+        readChar(PK_CHAR_STATE),
+        readChar(PK_CHAR_BATTERY),
+      ]);
+      const stateCode = stateRaw ? stateRaw.getUint8(0) : 0;
+      const tempF = tRaw ? tRaw.getFloat32(0, true) : null;
+      const targetF = tgtRaw ? tgtRaw.getFloat32(0, true) : null;
+      cached = {
+        ...cached,
+        connected: server?.connected ?? false,
+        temperature: tempF !== null ? fToC(tempF) : cached.temperature,
+        targetTemperature: targetF !== null ? fToC(targetF) : cached.targetTemperature,
+        isHeating: stateCode === 4 || stateCode === 5,
+        batteryLevel: battRaw ? battRaw.getUint8(0) : cached.batteryLevel,
+        rawData: {
+          state_code: stateCode,
+          temperature_f: tempF,
+          target_f: targetF,
+          service: "Peak (06aa)",
+        },
+      };
+    }
     return cached;
   }
 
   return {
-    deviceType,
-    displayName,
+    deviceType: "puffco_peak_pro",
+    displayName: "Peak Pro",
     manufacturer: "Puffco",
-    serviceUUIDs: [PUFFCO_SERVICE],
-    nameFilter,
+    serviceUUIDs: [PEAK_PRO_SERVICE, PEAK_SERVICE],
+    nameFilter: ["Peak Pro", "Puffco"],
 
     async connect(device) {
-      server = await device.gatt!.connect();
-      service = await server.getPrimaryService(PUFFCO_SERVICE);
+      const conn = await connectWithServiceFallback(device, PEAK_PRO_SERVICE, [PEAK_SERVICE]);
+      server = conn.server;
+      service = conn.service;
+      usedServiceUUID = conn.serviceUUID;
+      cached = { ...cached, connected: true };
 
-      try {
-        const stateChar = await service.getCharacteristic(PUFFCO_CHAR_STATE);
-        await stateChar.startNotifications();
-        const handler = async () => {
-          const s = await fetchState();
-          subscribers.forEach(cb => cb(s));
-        };
-        stateChar.addEventListener("characteristicvaluechanged", handler);
-        notifyUnsubscribe = () => {
-          stateChar.removeEventListener("characteristicvaluechanged", handler);
-          stateChar.stopNotifications().catch(() => {});
-        };
-      } catch {
-        pollingInterval = setInterval(async () => {
-          const s = await fetchState();
-          subscribers.forEach(cb => cb(s));
-        }, 2000);
+      if (service && isPeakPro()) {
+        try {
+          const stateChar = await service.getCharacteristic(PP_CHAR_STATE);
+          await stateChar.startNotifications();
+          const h = async () => { const s = await fetchState(); subscribers.forEach(cb => cb(s)); };
+          stateChar.addEventListener("characteristicvaluechanged", h);
+          notifyCleanup = () => {
+            stateChar.removeEventListener("characteristicvaluechanged", h);
+            stateChar.stopNotifications().catch(() => {});
+          };
+        } catch { /* notifications not available — polling fallback */ }
       }
+
+      pollingInterval = setInterval(async () => {
+        const s = await fetchState();
+        subscribers.forEach(cb => cb(s));
+      }, 2500);
 
       return fetchState();
     },
 
     async disconnect() {
-      notifyUnsubscribe?.();
+      notifyCleanup?.();
       if (pollingInterval) clearInterval(pollingInterval);
       server?.disconnect();
       cached = { ...cached, connected: false };
@@ -141,28 +155,48 @@ function createPuffcoAdapter(
     async getState() { return fetchState(); },
 
     async sendCommand(cmd: VaporizerCommand) {
-      switch (cmd.type) {
-        case "set_temperature": {
-          const tempF = celsiusToF(cmd.value ?? 200);
-          const buf = new ArrayBuffer(4);
-          new DataView(buf).setFloat32(0, tempF, true);
-          await write(PUFFCO_CHAR_TARGET, new Uint8Array(buf));
-          break;
-        }
-        case "boost":
-          await write(PUFFCO_CHAR_STATE, new Uint8Array([6]));
-          break;
-        case "power_off":
-          await write(PUFFCO_CHAR_STATE, new Uint8Array([0]));
-          break;
-        case "toggle_heat":
-          if (cached.isHeating) {
-            await write(PUFFCO_CHAR_STATE, new Uint8Array([2]));
-          } else {
-            await write(PUFFCO_CHAR_STATE, new Uint8Array([4]));
+      if (!service) return;
+      try {
+        if (isPeakPro()) {
+          switch (cmd.type) {
+            case "set_temperature": {
+              const raw = Math.round(cToF(cmd.value ?? 200) * 10);
+              const buf = new Uint8Array(2);
+              new DataView(buf.buffer).setUint16(0, raw, true);
+              await (await service.getCharacteristic(PP_CHAR_PROFILE_T)).writeValueWithoutResponse(buf);
+              cached.targetTemperature = cmd.value ?? 200;
+              break;
+            }
+            case "toggle_heat": {
+              const heat = await service.getCharacteristic(PP_CHAR_HEAT_CMD);
+              await heat.writeValueWithoutResponse(new Uint8Array([cached.isHeating ? 0 : 1]));
+              break;
+            }
+            case "power_off": {
+              const heat = await service.getCharacteristic(PP_CHAR_HEAT_CMD);
+              await heat.writeValueWithoutResponse(new Uint8Array([0]));
+              break;
+            }
           }
-          break;
-      }
+        } else {
+          switch (cmd.type) {
+            case "set_temperature": {
+              const f = cToF(cmd.value ?? 200);
+              const buf = new ArrayBuffer(4);
+              new DataView(buf).setFloat32(0, f, true);
+              await (await service.getCharacteristic(PK_CHAR_TARGET)).writeValueWithoutResponse(new Uint8Array(buf));
+              cached.targetTemperature = cmd.value ?? 200;
+              break;
+            }
+            case "toggle_heat":
+              await (await service.getCharacteristic(PK_CHAR_STATE)).writeValueWithoutResponse(new Uint8Array([cached.isHeating ? 2 : 4]));
+              break;
+            case "power_off":
+              await (await service.getCharacteristic(PK_CHAR_STATE)).writeValueWithoutResponse(new Uint8Array([0]));
+              break;
+          }
+        }
+      } catch (e) { console.error("Puffco command error:", e); }
       const s = await fetchState();
       subscribers.forEach(cb => cb(s));
     },
@@ -177,9 +211,12 @@ function createPuffcoAdapter(
 }
 
 export function createPuffcoPeakAdapter(): VaporizerAdapter {
-  return createPuffcoAdapter("puffco_peak", "Peak", ["Peak", "Puffco Peak"]);
-}
-
-export function createPuffcoPeakProAdapter(): VaporizerAdapter {
-  return createPuffcoAdapter("puffco_peak_pro", "Peak Pro", ["Peak Pro", "Puffco Pro"]);
+  const base = createPuffcoPeakProAdapter();
+  return {
+    ...base,
+    deviceType: "puffco_peak",
+    displayName: "Peak",
+    nameFilter: ["Peak"],
+    serviceUUIDs: [PEAK_SERVICE, PEAK_PRO_SERVICE],
+  };
 }

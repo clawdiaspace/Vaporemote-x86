@@ -93,58 +93,63 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
         delete unsubscribersRef.current[deviceId];
       }
 
-      let initialState: DeviceState;
+      const deviceType = adapter.deviceType;
+      const displayName = DEVICE_DISPLAY_NAMES[deviceType] ?? adapter.displayName;
+
+      let initialState: DeviceState = { ...DEFAULT_DEVICE_STATE };
+      let connectFailed = false;
+      let connectErrMsg = "";
+
       try {
         initialState = await adapter.connect(device);
       } catch (connectErr: unknown) {
+        connectFailed = true;
         const msg = connectErr instanceof Error ? connectErr.message : "Verbindung fehlgeschlagen";
-        const friendly = msg.includes("GATT") || msg.includes("service")
-          ? `Gerät verbunden, aber Service nicht gefunden. Falscher Gerätetyp gewählt? (${msg})`
+        connectErrMsg = msg.includes("GATT") || msg.includes("service") || msg.includes("getPrimary")
+          ? `Service nicht gefunden — prüfe ob der richtige Gerätetyp gewählt wurde. (${msg})`
           : msg;
-        setConnectError(friendly);
+        setConnectError(connectErrMsg);
         toast({
-          title: "Verbindungsfehler",
-          description: friendly,
+          title: `${displayName} — Verbindungsfehler`,
+          description: connectErrMsg,
           variant: "destructive",
         });
-        setIsConnecting(false);
-        return;
       }
 
-      const deviceType = adapter.deviceType;
       const connectedDevice: ConnectedDevice = {
         id: deviceId,
         name: device.name ?? adapter.displayName,
         deviceType,
         manufacturer: DEVICE_MANUFACTURERS[deviceType] ?? adapter.manufacturer,
-        displayName: DEVICE_DISPLAY_NAMES[deviceType] ?? adapter.displayName,
-        state: { ...DEFAULT_DEVICE_STATE, ...initialState, connected: true },
+        displayName,
+        state: { ...DEFAULT_DEVICE_STATE, ...initialState, connected: !connectFailed },
         adapter,
         activeSession: null,
         sessionMaxDuration: 300,
         addedAt: Date.now(),
       };
 
-      const unsub = adapter.subscribeToUpdates((state) => {
-        setDevices(prev => prev.map(d =>
-          d.id === deviceId ? { ...d, state: { ...d.state, ...state } } : d
-        ));
-      });
-      unsubscribersRef.current[deviceId] = unsub;
+      if (!connectFailed) {
+        const unsub = adapter.subscribeToUpdates((state) => {
+          setDevices(prev => prev.map(d =>
+            d.id === deviceId ? { ...d, state: { ...d.state, ...state } } : d
+          ));
+        });
+        unsubscribersRef.current[deviceId] = unsub;
+      }
 
       device.addEventListener("gattserverdisconnected", () => {
         setDevices(prev => prev.map(d =>
           d.id === deviceId ? { ...d, state: { ...d.state, connected: false } } : d
         ));
-        toast({ title: `${connectedDevice.displayName} getrennt`, description: "Bluetooth-Verbindung unterbrochen." });
+        toast({ title: `${displayName} getrennt`, description: "Bluetooth-Verbindung unterbrochen." });
       });
 
-      setDevices(prev => {
-        const filtered = prev.filter(d => d.id !== deviceId);
-        return [...filtered, connectedDevice];
-      });
+      setDevices(prev => [...prev.filter(d => d.id !== deviceId), connectedDevice]);
 
-      toast({ title: `${connectedDevice.displayName} verbunden`, description: "Gerät erfolgreich verbunden." });
+      if (!connectFailed) {
+        toast({ title: `${displayName} verbunden`, description: "Gerät erfolgreich verbunden." });
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Verbindung fehlgeschlagen";
       if (!(e instanceof DOMException && e.name === "NotFoundError")) {
