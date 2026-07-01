@@ -120,24 +120,14 @@ export async function requestBluetoothDeviceForAdapter(
     ? adapter.nameFilter
     : adapter.nameFilter ? [adapter.nameFilter] : [];
 
-  // Web Bluetooth uses OR logic for filters.
-  // We combine name-prefix filters AND service-UUID filters so the picker shows
-  // matching devices regardless of whether the device advertises by name or by
-  // service UUID (many devices, e.g. S&B, advertise the service UUID, not their
-  // model name). This is more reliable than name-only filtering.
-  const filters = [
-    ...names.map((n) => ({ namePrefix: n })),
-    ...adapter.serviceUUIDs.map((s) => ({ services: [s] })),
-  ];
-
   try {
-    if (filters.length > 0) {
-      return await navigator.bluetooth.requestDevice({
-        filters,
-        optionalServices: adapter.serviceUUIDs,
-      });
-    }
-    // Last resort: show all nearby devices (adapter has no name or service info)
+    // acceptAllDevices is the only approach that reliably works across all
+    // platforms (Chrome desktop/Android, Bluefy on iOS).  Service-UUID filters
+    // are ignored by many device firmwares that don't include service UUIDs in
+    // their advertisement packets (e.g. Storz & Bickel 128-bit custom UUIDs).
+    // Name-prefix filters are device-firmware-dependent and fail silently.
+    // The UX mitigation is per-model connect buttons (see Devices page) so the
+    // user is already guided to pick the right device.
     return await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
       optionalServices: adapter.serviceUUIDs,
@@ -157,25 +147,11 @@ export async function requestBluetoothDevice(
     new Set(adapters.flatMap((a) => a.serviceUUIDs))
   );
 
-  // Combine name-prefix AND service-UUID filters (OR logic) for each adapter.
-  // This ensures devices appear whether they broadcast by name or by service UUID.
-  const nameFilters: object[] = [];
-  const serviceFilters: object[] = [];
-  for (const adapter of adapters) {
-    const names = adapter.nameFilter
-      ? (Array.isArray(adapter.nameFilter) ? adapter.nameFilter : [adapter.nameFilter])
-      : [];
-    for (const n of names) nameFilters.push({ namePrefix: n });
-    for (const s of adapter.serviceUUIDs) serviceFilters.push({ services: [s] });
-  }
-  const filters = [...nameFilters, ...serviceFilters];
-
   try {
-    const device = await navigator.bluetooth.requestDevice(
-      filters.length > 0
-        ? { filters, optionalServices: allServiceUUIDs }
-        : { acceptAllDevices: true, optionalServices: allServiceUUIDs }
-    );
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: allServiceUUIDs,
+    });
 
     const adapter = detectAdapter(device, adapters);
     return { device, adapter };

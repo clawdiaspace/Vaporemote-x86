@@ -5,6 +5,23 @@ import { createDrDabberSwitchAdapter, createDrDabberBoostEvoAdapter } from "./dr
 import { createArizerSoloAdapter, createArizerAirAdapter, createPax3Adapter, createDaVinciIQ2Adapter } from "./additional";
 import type { VaporizerAdapter, VaporizerType } from "../bluetooth";
 
+// Re-export factory functions for use in per-device connect UI
+export {
+  createVolcanoHybridAdapter, createVentyAdapter, createCraftyPlusAdapter,
+} from "./storz-bickel";
+export {
+  createPuffcoPeakProAdapter, createPuffcoPeakAdapter,
+} from "./puffco";
+export {
+  createCartaSportAdapter, createCartaAdapter,
+} from "./focus-v";
+export {
+  createDrDabberSwitchAdapter, createDrDabberBoostEvoAdapter,
+} from "./dr-dabber";
+export {
+  createArizerAirAdapter, createPax3Adapter, createDaVinciIQ2Adapter,
+} from "./additional";
+
 export function getAllAdapters(): VaporizerAdapter[] {
   return [
     createVolcanoHybridAdapter(),
