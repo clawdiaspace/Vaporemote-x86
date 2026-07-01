@@ -124,10 +124,145 @@ export function createArizerSoloAdapter(): VaporizerAdapter {
   });
 }
 
-export function createArizerAirAdapter(): VaporizerAdapter {
-  const base = createArizerSoloAdapter();
-  return { ...base, deviceType: "arizer_air", displayName: "Air 2", nameFilter: ["Air"] };
+// Arizer Air 2 uses a dedicated UART-over-BLE stack (TI CC254x / HM-10 pattern).
+// Service: 0000FFE0, TX+RX char: 0000FFE1 (single char for both write and notify).
+// Protocol: binary framing [0xAA, cmd, ...payload, 0x55] — best-effort RE.
+export function createArizerAir2Adapter(): VaporizerAdapter {
+  const AIR2_SERVICE = "0000ffe0-0000-1000-8000-00805f9b34fb";
+  const AIR2_UART    = "0000ffe1-0000-1000-8000-00805f9b34fb";
+
+  let server: BluetoothRemoteGATTServer | null = null;
+  let uartChar: BluetoothRemoteGATTCharacteristic | null = null;
+  const subscribers: Array<(s: DeviceState) => void> = [];
+  let notifyHandler: ((e: Event) => void) | null = null;
+  let pollingInterval: ReturnType<typeof setInterval> | null = null;
+
+  let cached: DeviceState = {
+    connected: false, temperature: null, targetTemperature: null,
+    isHeating: false, batteryLevel: null, mode: "convection", rawData: {},
+  };
+
+  function notify() { subscribers.forEach(cb => cb({ ...cached })); }
+
+  async function send(data: Uint8Array): Promise<void> {
+    if (!uartChar) return;
+    try { await uartChar.writeValueWithoutResponse(data); }
+    catch (e) { console.warn("Arizer Air 2 write:", e); }
+  }
+
+  function parsePacket(dv: DataView): void {
+    if (dv.byteLength < 1) return;
+    const bytes = new Uint8Array(dv.buffer);
+    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(" ");
+    const raw: Record<string, unknown> = { packet_hex: hex };
+
+    // Binary framing 0xAA … 0x55 (community-documented pattern)
+    if (bytes[0] === 0xaa && dv.byteLength >= 4) {
+      const tempRaw = dv.getUint16(1, false);
+      if (tempRaw > 0 && tempRaw < 5000) {
+        cached.temperature = tempRaw / 10;
+        raw.temp_raw = tempRaw;
+      }
+      if (dv.byteLength >= 6) {
+        const tgtRaw = dv.getUint16(3, false);
+        if (tgtRaw > 0 && tgtRaw < 5000) {
+          cached.targetTemperature = tgtRaw / 10;
+          raw.target_raw = tgtRaw;
+        }
+      }
+      if (dv.byteLength >= 7) {
+        const bat = bytes[5];
+        if (bat <= 100) { cached.batteryLevel = bat; raw.battery = bat; }
+      }
+    }
+
+    // ASCII fallback: "T=XXX.X S=XXX.X B=XX" style
+    try {
+      const text = new TextDecoder().decode(dv).trim();
+      if (/[a-zA-Z=]/.test(text)) {
+        raw.text = text;
+        const tm = text.match(/T=([\d.]+)/); if (tm) cached.temperature = parseFloat(tm[1]);
+        const sm = text.match(/S=([\d.]+)/); if (sm) cached.targetTemperature = parseFloat(sm[1]);
+        const bm = text.match(/B=(\d+)/);    if (bm) cached.batteryLevel = parseInt(bm[1]);
+      }
+    } catch { /* not ASCII */ }
+
+    if (cached.temperature !== null && cached.targetTemperature !== null) {
+      cached.isHeating = cached.temperature < cached.targetTemperature - 2;
+    }
+    cached.rawData = { ...cached.rawData, ...raw };
+  }
+
+  return {
+    deviceType: "arizer_air",
+    displayName: "Air 2",
+    manufacturer: "Arizer",
+    serviceUUIDs: [AIR2_SERVICE],
+    nameFilter: ["Air 2", "ArZ-Air", "Arizer Air"],
+
+    async connect(device) {
+      const conn = await connectWithServiceFallback(device, AIR2_SERVICE);
+      server = conn.server;
+      const service = conn.service;
+      cached = { ...cached, connected: true };
+      if (!service) return { ...cached };
+      try {
+        uartChar = await service.getCharacteristic(AIR2_UART);
+        await uartChar.startNotifications();
+        notifyHandler = (e) => {
+          const ch = e.target as BluetoothRemoteGATTCharacteristic;
+          if (ch.value) { parsePacket(ch.value); notify(); }
+        };
+        uartChar.addEventListener("characteristicvaluechanged", notifyHandler);
+      } catch (e) { console.warn("Arizer Air 2: UART setup failed:", e); }
+      pollingInterval = setInterval(() => send(new Uint8Array([0xaa, 0x01, 0x55])), 3000);
+      await send(new Uint8Array([0xaa, 0x01, 0x55]));
+      return { ...cached };
+    },
+
+    async disconnect() {
+      if (pollingInterval) clearInterval(pollingInterval);
+      if (uartChar && notifyHandler) {
+        uartChar.removeEventListener("characteristicvaluechanged", notifyHandler);
+        await uartChar.stopNotifications().catch(() => {});
+      }
+      server?.disconnect();
+      cached = { ...cached, connected: false };
+    },
+
+    async getState() { return { ...cached }; },
+
+    async sendCommand(cmd: VaporizerCommand) {
+      switch (cmd.type) {
+        case "set_temperature": {
+          const raw = Math.round((cmd.value ?? 185) * 10);
+          await send(new Uint8Array([0xaa, 0x11, (raw >> 8) & 0xff, raw & 0xff, 0x55]));
+          cached.targetTemperature = cmd.value ?? 185;
+          break;
+        }
+        case "toggle_heat":
+          await send(new Uint8Array([0xaa, 0x12, cached.isHeating ? 0x00 : 0x01, 0x55]));
+          cached.isHeating = !cached.isHeating;
+          break;
+        case "power_off":
+          await send(new Uint8Array([0xaa, 0x12, 0x00, 0x55]));
+          cached.isHeating = false;
+          break;
+      }
+      notify();
+    },
+
+    subscribeToUpdates(cb) {
+      subscribers.push(cb);
+      return () => { const i = subscribers.indexOf(cb); if (i >= 0) subscribers.splice(i, 1); };
+    },
+
+    async getRawData() { return cached.rawData ?? {}; },
+  };
 }
+
+// Legacy alias — kept for registry compatibility
+export function createArizerAirAdapter(): VaporizerAdapter { return createArizerAir2Adapter(); }
 
 export function createPax3Adapter(): VaporizerAdapter {
   return createGenericPollingAdapter({

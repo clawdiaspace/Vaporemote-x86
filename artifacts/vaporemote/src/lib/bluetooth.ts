@@ -69,8 +69,10 @@ export interface VaporizerCommand {
     | "power_off"
     | "set_profile"
     | "set_led_brightness"
-    | "set_auto_shutoff";
+    | "set_auto_shutoff"
+    | "set_session_duration";
   value?: number;
+  rgb?: [number, number, number];
 }
 
 export interface VaporizerAdapter {
@@ -114,10 +116,23 @@ export async function requestBluetoothDeviceForAdapter(
 ): Promise<BluetoothDevice | null> {
   if (!isWebBluetoothSupported()) return null;
 
+  // Build name-prefix filters so the BLE picker only shows matching devices
+  const names = Array.isArray(adapter.nameFilter)
+    ? adapter.nameFilter
+    : adapter.nameFilter ? [adapter.nameFilter] : [];
+
+  // Always include all adapter serviceUUIDs as optional so characteristics are
+  // accessible even when the device advertises under a different name
+  const allSvcUUIDs = adapter.serviceUUIDs;
+
+  const filters = names.length > 0
+    ? names.map((n) => ({ namePrefix: n }))
+    : [{}]; // last resort: acceptAll equivalent via empty filter
+
   try {
     return await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: adapter.serviceUUIDs,
+      filters,
+      optionalServices: allSvcUUIDs,
     });
   } catch (e: unknown) {
     if (e instanceof DOMException && e.name === "NotFoundError") return null;

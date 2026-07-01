@@ -175,8 +175,18 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   const sendCommand = useCallback(async (deviceId: string, cmd: VaporizerCommand) => {
     const device = devices.find(d => d.id === deviceId);
     if (!device) return;
-    await device.adapter.sendCommand(cmd);
-    const newState = await device.adapter.getState();
+    try {
+      await device.adapter.sendCommand(cmd);
+    } catch (cmdErr) {
+      console.warn(`sendCommand(${cmd.type}) failed:`, cmdErr);
+    }
+    // getState() does BLE reads — guard against transient errors
+    let newState = device.state;
+    try {
+      newState = await device.adapter.getState();
+    } catch (stateErr) {
+      console.warn("getState after sendCommand failed:", stateErr);
+    }
 
     setDevices(prev => prev.map(d => {
       if (d.id !== deviceId) return d;
@@ -209,22 +219,35 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
     const device = devices.find(d => d.id === deviceId);
     if (!device || !device.state.connected) return;
     if (!device.state.isHeating) {
-      await device.adapter.sendCommand({ type: "toggle_heat" });
-      const newState = await device.adapter.getState();
+      try {
+        await device.adapter.sendCommand({ type: "toggle_heat" });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Heizbefehl fehlgeschlagen";
+        console.error("heatUp error:", e);
+        toast({ title: "Fehler beim Heizen", description: msg, variant: "destructive" });
+        return;
+      }
+      let newState = device.state;
+      try { newState = await device.adapter.getState(); } catch { /* keep last state */ }
       const session = startSession(deviceId, device.deviceType, device.displayName, device.state.targetTemperature ?? 185);
       setDevices(prev => prev.map(d =>
         d.id === deviceId ? { ...d, state: { ...d.state, ...newState }, activeSession: session } : d
       ));
     }
-  }, [devices]);
+  }, [devices, toast]);
 
   const heatOff = useCallback(async (deviceId: string) => {
     const device = devices.find(d => d.id === deviceId);
     if (!device || !device.state.connected) return;
     if (device.state.isHeating) {
-      await device.adapter.sendCommand({ type: "toggle_heat" });
+      try {
+        await device.adapter.sendCommand({ type: "toggle_heat" });
+      } catch (e) {
+        console.warn("heatOff toggle error:", e);
+      }
     }
-    const newState = await device.adapter.getState();
+    let newState = device.state;
+    try { newState = await device.adapter.getState(); } catch { /* keep last state */ }
     let updated = [...allSessions];
     if (device.activeSession) {
       const finished = endSession(device.activeSession);

@@ -1,2 +1,2 @@
-- [Volcano Hybrid BLE Protocol](volcano-hybrid-protocol.md) — full verified UUID table, service `10110000`, separate ON/OFF chars, status bitfield
-- [Venty BLE Protocol](venty-protocol.md) — service `10100000`, different from Volcano, all confirmed UUIDs
+- [VapoRemote BLE patterns](vaporemote-ble.md) — BLE adapter patterns, known UUIDs, protocol notes for all supported vaporizers
+- [VapoRemote known bugs](vaporemote-bugs.md) — pre-existing TypeScript Web Bluetooth type errors are non-blocking (Vite/esbuild doesn't type-check)

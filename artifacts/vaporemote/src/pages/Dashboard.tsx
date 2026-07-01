@@ -1,6 +1,6 @@
 import { useDevices } from "@/contexts/DeviceContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Bluetooth, Plus, Wind, PowerOff, Thermometer, Battery,
   Clock, Wifi, WifiOff, Flame, PenLine, Check, X, AlarmClock, TimerReset, Zap,
@@ -365,24 +365,25 @@ function DeviceCard({ device }: { device: ConnectedDevice }) {
                     onClick={() => {
                       sendCommand(device.id, { type: "set_profile", value: p.index });
                       setLocalTarget(p.tempC);
+                      setSessionMaxDuration(device.id, p.duration);
                     }}
                     disabled={!device.state.connected}
-                    title={`${p.name} — ${p.tempF}°F / ${p.tempC}°C`}
-                    className={`flex flex-col items-center gap-1.5 p-2 rounded-xl border transition-all duration-200 disabled:opacity-40 ${
+                    title={`${p.nameEn} — ${p.tempF}°F / ${p.tempC.toFixed(1)}°C · ${p.duration}s`}
+                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all duration-200 disabled:opacity-40 ${
                       isActive
                         ? "border-white/40 bg-white/10 shadow-[0_0_12px_rgba(255,255,255,0.15)]"
                         : "border-border/30 bg-black/20 hover:bg-white/5 hover:border-white/20"
                     }`}
                   >
                     <div
-                      className={`w-6 h-6 rounded-full transition-all ${isActive ? "shadow-[0_0_10px_var(--glow)]" : ""}`}
+                      className="w-5 h-5 rounded-full flex-shrink-0"
                       style={{
                         backgroundColor: p.color,
-                        ["--glow" as string]: p.color,
-                        boxShadow: isActive ? `0 0 10px ${p.color}` : undefined,
+                        boxShadow: isActive ? `0 0 10px ${p.color}, 0 0 4px ${p.color}` : "none",
                       }}
                     />
-                    <span className="text-[9px] font-mono text-muted-foreground leading-tight">{p.tempF}°</span>
+                    <span className="text-[8px] font-mono text-muted-foreground leading-tight">{p.tempF}°</span>
+                    <span className="text-[7px] font-mono text-muted-foreground/60 leading-tight">{p.duration}s</span>
                   </button>
                 );
               })}

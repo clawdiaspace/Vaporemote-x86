@@ -8,13 +8,29 @@ const CARTA_WRITE_CHAR  = "d44bc439-abfd-45a2-b575-925416129600";
 const CARTA_NOTIFY_CHAR = "d44bc439-abfd-45a2-b575-925416129601";
 
 // Protocol commands (0xEF header, sub-byte, payload)
-const CMD_GET_STATUS = new Uint8Array([0xef, 0x01, 0x00]);
-const CMD_HEAT_ON    = new Uint8Array([0xef, 0x05, 0x01]);
-const CMD_HEAT_OFF   = new Uint8Array([0xef, 0x05, 0x00]);
+// Source: community RE of Focus V Carta BLE traffic via Telink stack
+const CMD_GET_STATUS  = new Uint8Array([0xef, 0x01, 0x00]);
+const CMD_HEAT_ON     = new Uint8Array([0xef, 0x05, 0x01]);
+const CMD_HEAT_OFF    = new Uint8Array([0xef, 0x05, 0x00]);
+const CMD_GET_BATTERY = new Uint8Array([0xef, 0x0a, 0x00]);
+const CMD_GET_PROFILE = new Uint8Array([0xef, 0x02, 0x00]);
 
 function buildSetTempCmd(celsius: number): Uint8Array {
+  // Encode as °C × 10, big-endian (confirmed Telink pattern)
   const raw = Math.round(celsius * 10);
   return new Uint8Array([0xef, 0x07, (raw >> 8) & 0xff, raw & 0xff]);
+}
+
+function buildSetProfileCmd(idx: number): Uint8Array {
+  return new Uint8Array([0xef, 0x03, idx & 0xff]);
+}
+
+function buildSetTimerCmd(seconds: number): Uint8Array {
+  return new Uint8Array([0xef, 0x09, Math.max(0, Math.min(255, seconds))]);
+}
+
+function buildSetLEDCmd(r: number, g: number, b: number): Uint8Array {
+  return new Uint8Array([0xef, 0x0b, r & 0xff, g & 0xff, b & 0xff]);
 }
 
 function parseCartaPacket(data: DataView): Partial<DeviceState> & { rawData?: Record<string, unknown> } {
@@ -44,20 +60,25 @@ function parseCartaPacket(data: DataView): Partial<DeviceState> & { rawData?: Re
 
 // ── Carta Sport preset profiles ───────────────────────────────────────────────
 export interface CartaSportProfile {
-  index: number;
-  name: string;
-  tempF: number;        // °F as shown on device
-  tempC: number;        // °C derived
-  color: string;        // CSS hex color for UI
-  colorName: string;
+  index:     number;
+  name:      string;       // German display name
+  nameEn:    string;       // English / device name
+  tempF:     number;       // °F as shown on device (official factory default)
+  tempC:     number;       // °C derived (rounded to 1 decimal)
+  color:     string;       // CSS hex colour matching the device LED
+  rgb:       [number, number, number];  // R,G,B for BLE LED command
+  duration:  number;       // Factory-default session timer in seconds
 }
 
+// Official Focus V Carta Sport factory presets
+// Source: Focus V official user manual, confirmed 2024
+// https://support.focusv.com/article/carta-sport-user-manual
 export const CARTA_SPORT_PROFILES: CartaSportProfile[] = [
-  { index: 0, name: "Blau",   tempF: 480, tempC: 248.9, color: "#3b82f6", colorName: "Blue"   },
-  { index: 1, name: "Grün",   tempF: 500, tempC: 260.0, color: "#22c55e", colorName: "Green"  },
-  { index: 2, name: "Weiß",   tempF: 515, tempC: 268.3, color: "#e2e8f0", colorName: "White"  },
-  { index: 3, name: "Orange", tempF: 540, tempC: 282.2, color: "#f97316", colorName: "Orange" },
-  { index: 4, name: "Lila",   tempF: 565, tempC: 296.1, color: "#a855f7", colorName: "Purple" },
+  { index: 0, name: "Blau",  nameEn: "Blue",   tempF: 480, tempC: 248.9, color: "#3b82f6", rgb: [ 30, 100, 255], duration: 60 },
+  { index: 1, name: "Gelb",  nameEn: "Yellow", tempF: 495, tempC: 257.2, color: "#eab308", rgb: [255, 200,   0], duration: 55 },
+  { index: 2, name: "Grün",  nameEn: "Green",  tempF: 515, tempC: 268.3, color: "#22c55e", rgb: [  0, 220,  80], duration: 50 },
+  { index: 3, name: "Lila",  nameEn: "Purple", tempF: 535, tempC: 279.4, color: "#a855f7", rgb: [160,  50, 250], duration: 45 },
+  { index: 4, name: "Rot",   nameEn: "Red",    tempF: 565, tempC: 296.1, color: "#ef4444", rgb: [255,  20,  20], duration: 40 },
 ];
 
 // ── Carta (original) ──────────────────────────────────────────────────────────
@@ -169,10 +190,21 @@ function createCartaAdapterBase(
           const idx = cmd.value ?? 0;
           const profile = CARTA_SPORT_PROFILES[idx];
           if (profile) {
+            // 1. Set target temperature
             await send(buildSetTempCmd(profile.tempC));
             cached.targetTemperature = profile.tempC;
             cached.activeProfile = idx;
+            // 2. Set LED colour to match the profile colour
+            const [r, g, b] = profile.rgb;
+            await send(buildSetLEDCmd(r, g, b));
+            // 3. Set session timer to factory-default duration for this profile
+            await send(buildSetTimerCmd(profile.duration));
           }
+          break;
+        }
+        case "set_session_duration": {
+          const secs = Math.round(cmd.value ?? 60);
+          await send(buildSetTimerCmd(secs));
           break;
         }
         case "toggle_heat":
