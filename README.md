@@ -7,6 +7,9 @@
 
 This is an **unmodified mirror** of the original [Lichtraumprofil/Vaporemote](https://github.com/Lichtraumprofil/Vaporemote) project.
 
+> **Fully redone from scratch cuz Replit messed up the code.**
+> **reBuild with 💚**
+
 **Creator & Original Author:** [Lichtraumprofil](https://github.com/Lichtraumprofil)
 
 ## 📦 Related
